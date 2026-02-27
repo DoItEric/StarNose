@@ -1,0 +1,6 @@
+packages:
+  - "gateway"
+  - "ui"
+  - "plugins/*"
+  - "Agents"
+  - "api_model"

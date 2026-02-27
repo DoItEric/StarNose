@@ -1,0 +1,18 @@
+{
+  "name": "starnose",
+  "version": "0.1.0",
+  "private": true,
+  "description": "StarNose - 个人数据嗅探工具（NodeJS + Vue3）",
+  "scripts": {
+    "build": "pnpm -r run build",
+    "dev": "pnpm --filter ui dev",
+    "dev:gateway": "pnpm --filter gateway dev",
+    "dev:ui": "pnpm --filter ui dev",
+    "lint": "pnpm -r run lint",
+    "typecheck": "pnpm -r run typecheck"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "packageManager": "pnpm@9.0.0"
+}

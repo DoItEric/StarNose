@@ -1,0 +1,89 @@
+############################
+# Node / pnpm / TypeScript #
+############################
+node_modules/
+pnpm-lock.yaml
+package-lock.json
+yarn.lock
+
+dist/
+dist-ssr/
+build/
+.cache/
+.turbo/
+.nuxt/
+
+# TypeScript build output
+*.tsbuildinfo
+
+##############
+# Frontend UI
+##############
+ui/node_modules/
+ui/dist/
+ui/.vite/
+ui/.cache/
+ui/coverage/
+
+################
+# Gateway (API)
+################
+gateway/node_modules/
+gateway/dist/
+gateway/.cache/
+gateway/coverage/
+
+############
+# Plugins  #
+############
+plugins/**/node_modules/
+plugins/**/dist/
+plugins/**/.cache/
+plugins/**/coverage/
+
+#############
+# LLM / logs
+#############
+logs/
+*.log
+
+########
+# Env  #
+########
+.env
+.env.*
+!.env.example
+
+#########
+# DB / OS
+#########
+*.sqlite
+*.db
+*.db-journal
+*.pid
+*.seed
+
+# macOS
+.DS_Store
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+#########
+# IDE   #
+#########
+.idea/
+.vscode/
+*.swp
+*.swo
+
+#############
+# Misc      #
+#############
+coverage/
+.sass-cache/
+.eslintcache
+.stylelintcache
+.cache-loader/

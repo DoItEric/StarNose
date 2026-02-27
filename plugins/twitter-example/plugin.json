@@ -1,0 +1,7 @@
+{
+  "key": "twitter",
+  "name": "Twitter Example Plugin",
+  "version": "0.1.0",
+  "description": "Example Twitter data source plugin for StarNose",
+  "entry": "dist/main.js"
+}
