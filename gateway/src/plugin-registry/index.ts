@@ -1,7 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
-import type { PluginRunOptions, PluginRunResult } from "starnose-api-model";
+import type { PluginRunOptions, PluginRunResult } from "../api-model";
 import type { PluginInfo, PluginRegistry } from "./types";
+import { getPluginRunner, hasPluginRunner } from "./runners";
 
 export function initPluginRegistry(
   pluginsDir: string,
@@ -21,7 +22,6 @@ export function initPluginRegistry(
           name: string;
           version: string;
           description?: string;
-          entry?: string;
         };
         plugins.push({
           key: meta.key,
@@ -29,7 +29,7 @@ export function initPluginRegistry(
           version: meta.version,
           description: meta.description,
           type: "datasource",
-          entry: meta.entry ?? "dist/main.js"
+          entry: ""
         });
       } catch {
         // ignore broken plugin
@@ -41,6 +41,9 @@ export function initPluginRegistry(
     listPlugins() {
       return plugins;
     },
+    hasPluginRunner(pluginKey: string) {
+      return hasPluginRunner(pluginKey);
+    },
     async runPlugin(
       pluginKey: string,
       options: PluginRunOptions
@@ -49,15 +52,11 @@ export function initPluginRegistry(
       if (!plugin) {
         throw new Error(`Plugin not found: ${pluginKey}`);
       }
-      const entryPath = path.resolve(pluginsDir, pluginKey, plugin.entry);
-      if (!fs.existsSync(entryPath)) {
-        throw new Error(`Plugin entry not found: ${entryPath}`);
+      const run = getPluginRunner(pluginKey);
+      if (!run) {
+        throw new Error(`Plugin ${pluginKey} has no registered runner`);
       }
-      const mod = require(entryPath) as { run?: (opts: PluginRunOptions) => Promise<PluginRunResult> };
-      if (typeof mod.run !== "function") {
-        throw new Error(`Plugin ${pluginKey} does not export run() (in-process run not supported)`);
-      }
-      return mod.run(options);
+      return run(options);
     }
   };
 }

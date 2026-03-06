@@ -14,7 +14,7 @@ function loadConfig(): RedditPluginConfig {
   const gatewayUrl = process.env.GATEWAY_URL ?? "http://localhost:3000";
   let llmConcurrency = DEFAULT_LLM_CONCURRENCY;
   try {
-    const configPath = path.resolve(__dirname, "../config.json");
+    const configPath = path.resolve(__dirname, "config.json");
     if (fs.existsSync(configPath)) {
       const raw = fs.readFileSync(configPath, "utf8");
       const data = JSON.parse(raw) as { llmConcurrency?: number };

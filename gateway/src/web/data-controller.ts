@@ -5,8 +5,9 @@ import type { PluginRegistry } from "../plugin-registry/types";
 import type {
   ListDataQuery,
   ListDataResponse,
+  MarkDataReadRequest,
   TrackDataRequest
-} from "starnose-api-model";
+} from "../api-model";
 
 interface Deps {
   pool: Pool;
@@ -19,10 +20,29 @@ export function createDataController({ pool }: Deps): Router {
   router.get("/", async (req: Request, res: Response) => {
     const query = req.query as unknown as ListDataQuery;
 
-    const page = query.page && query.page > 0 ? query.page : 1;
+    const toNumber = (v: unknown): number | undefined => {
+      if (typeof v === "number") return Number.isFinite(v) ? v : undefined;
+      if (typeof v === "string" && v.trim() !== "") {
+        const n = Number(v);
+        return Number.isFinite(n) ? n : undefined;
+      }
+      return undefined;
+    };
+    const toBoolean = (v: unknown): boolean | undefined => {
+      if (typeof v === "boolean") return v;
+      if (typeof v === "string") {
+        if (v === "true" || v === "1") return true;
+        if (v === "false" || v === "0") return false;
+      }
+      return undefined;
+    };
+
+    const pageRaw = toNumber(query.page);
+    const page = pageRaw && pageRaw > 0 ? Math.floor(pageRaw) : 1;
+    const pageSizeRaw = toNumber(query.pageSize);
     const pageSize =
-      query.pageSize && query.pageSize > 0 && query.pageSize <= 100
-        ? query.pageSize
+      pageSizeRaw && pageSizeRaw > 0 && pageSizeRaw <= 500
+        ? Math.floor(pageSizeRaw)
         : 100;
 
     const conditions: string[] = [];
@@ -48,6 +68,12 @@ export function createDataController({ pool }: Deps): Router {
       params.push(query.sources);
       conditions.push(`source = ANY($${params.length}::text[])`);
     }
+    const trackingOnly = toBoolean((query as any).trackingOnly);
+    if (trackingOnly) {
+      conditions.push(
+        `EXISTS (SELECT 1 FROM tracking_items ti WHERE ti.data_id = data_items.id)`
+      );
+    }
     if (query.readStatus && query.readStatus !== "all") {
       params.push(query.readStatus === "read");
       conditions.push(`read = $${params.length}`);
@@ -65,19 +91,20 @@ export function createDataController({ pool }: Deps): Router {
       whereClause = `WHERE ${conditions.join(" AND ")}`;
     }
 
-    let orderClause = "ORDER BY crawl_time DESC";
+    // 未阅优先（read=false 在前），再按时间排序
+    let orderClause = "ORDER BY read ASC, crawl_time DESC";
     switch (query.sortBy) {
       case "crawlTimeAsc":
-        orderClause = "ORDER BY crawl_time ASC";
+        orderClause = "ORDER BY read ASC, crawl_time ASC";
         break;
       case "crawlTimeDesc":
-        orderClause = "ORDER BY crawl_time DESC";
+        orderClause = "ORDER BY read ASC, crawl_time DESC";
         break;
       case "publishTimeAsc":
-        orderClause = "ORDER BY publish_time ASC NULLS LAST";
+        orderClause = "ORDER BY read ASC, publish_time ASC NULLS LAST";
         break;
       case "publishTimeDesc":
-        orderClause = "ORDER BY publish_time DESC NULLS LAST";
+        orderClause = "ORDER BY read ASC, publish_time DESC NULLS LAST";
         break;
       default:
         break;
@@ -105,10 +132,11 @@ export function createDataController({ pool }: Deps): Router {
            content,
            url,
            keywords,
-           tracking,
+           EXISTS (SELECT 1 FROM tracking_items ti WHERE ti.data_id = data_items.id) AS tracking,
            crawl_time AS "crawlTime",
            publish_time AS "publishTime",
            summary,
+           hot_words AS "hotWords",
            read,
            remark,
            heat_score AS "heatScore",
@@ -181,6 +209,24 @@ export function createDataController({ pool }: Deps): Router {
       // eslint-disable-next-line no-console
       console.error("POST /web/data/track error", err);
       res.status(500).json({ message: "Failed to update tracking" });
+    }
+  });
+
+  router.post("/read", async (req: Request, res: Response) => {
+    const body = req.body as MarkDataReadRequest;
+    try {
+      await pool.query(
+        `UPDATE data_items
+           SET read = $1,
+               updated_at = now()
+         WHERE id = $2`,
+        [body.read, body.id]
+      );
+      res.status(204).end();
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error("POST /web/data/read error", err);
+      res.status(500).json({ message: "Failed to update read status" });
     }
   });
 

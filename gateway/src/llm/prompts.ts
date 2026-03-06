@@ -35,13 +35,17 @@ export function loadPromptPair(name: string): PromptPair {
   return { system, userTemplate };
 }
 
+function escapeRe(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 export function fillTemplate(
   template: string,
   vars: Record<string, string>
 ): string {
   let result = template;
   for (const [key, value] of Object.entries(vars)) {
-    result = result.replaceAll(`{{${key}}}`, value);
+    result = result.replace(new RegExp(escapeRe(`{{${key}}}`), "g"), value);
   }
   return result;
 }

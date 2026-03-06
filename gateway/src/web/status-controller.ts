@@ -2,7 +2,7 @@ import type { Router, Request, Response } from "express";
 import express from "express";
 import type { Pool } from "pg";
 import type { PluginRegistry } from "../plugin-registry/types";
-import type { SchedulerStatus } from "starnose-api-model";
+import type { SchedulerStatus } from "../api-model";
 
 interface Deps {
   pool: Pool;

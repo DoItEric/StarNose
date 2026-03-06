@@ -5,7 +5,7 @@ import type { PluginRegistry } from "../plugin-registry/types";
 import type {
   PluginHistoryItem,
   PluginScheduleConfig
-} from "starnose-api-model";
+} from "../api-model";
 import { isPluginEnabled, setPluginEnabled } from "../plugin-registry/state";
 
 interface Deps {

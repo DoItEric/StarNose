@@ -2,7 +2,7 @@
   "name": "starnose",
   "version": "0.1.0",
   "private": true,
-  "description": "StarNose - 个人数据嗅探工具（NodeJS + Vue3）",
+  "description": "StarNose - 个人数据嗅探工具，仅含 gateway 与 ui 两个子项目",
   "scripts": {
     "build": "pnpm -r run build",
     "dev": "pnpm --filter ui dev",

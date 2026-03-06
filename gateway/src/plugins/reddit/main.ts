@@ -46,6 +46,7 @@ interface ValidateBody {
 interface ValidateResponse {
   passed: boolean;
   summary?: string;
+  hotword?: string;
 }
 
 interface DataRecordBody {
@@ -60,10 +61,17 @@ interface DataRecordBody {
   crawlTime: string;
   publishTime?: string;
   summary?: string;
+  hotWords?: string;
   read: boolean;
   remark?: string;
   heatScore: number;
   extra?: Record<string, unknown>;
+}
+
+/** 当前时间 ISO 字符串（上海时区 Asia/Shanghai） */
+function getShanghaiISOString(): string {
+  const s = new Date().toLocaleString("sv-SE", { timeZone: "Asia/Shanghai" });
+  return s.replace(" ", "T") + "+08:00";
 }
 
 function getLogFilePath(): string {
@@ -78,7 +86,7 @@ function writeLog(step: string, detail?: unknown): void {
   try {
     const logPath = getLogFilePath();
     const line = JSON.stringify({
-      ts: new Date().toISOString(),
+      ts: getShanghaiISOString(),
       step,
       detail
     });
@@ -86,6 +94,43 @@ function writeLog(step: string, detail?: unknown): void {
   } catch {
     // 写日志失败不影响主流程
   }
+}
+
+function axiosErrorToDetail(err: unknown): Record<string, unknown> {
+  if (!axios.isAxiosError(err)) {
+    return {
+      kind: "unknown",
+      message: err instanceof Error ? err.message : String(err)
+    };
+  }
+  return {
+    kind: "axios",
+    message: err.message,
+    code: err.code,
+    url: err.config?.url,
+    method: err.config?.method,
+    baseURL: err.config?.baseURL,
+    timeout: err.config?.timeout,
+    status: err.response?.status,
+    response: err.response?.data
+  };
+}
+
+function matchedKeywords(
+  keywordRules: string[],
+  title: string,
+  content: string
+): string[] {
+  const partsList = parseKeywordRules(keywordRules ?? []);
+  const text = `${title ?? ""}\n${content ?? ""}`.toLowerCase();
+  const out: string[] = [];
+  for (let i = 0; i < partsList.length; i++) {
+    const parts = partsList[i];
+    if (!parts || parts.length === 0) continue;
+    const allFound = parts.every((p) => text.includes(p.toLowerCase()));
+    if (allFound) out.push(keywordRules[i]);
+  }
+  return out;
 }
 
 async function runWithLimit<T, R>(
@@ -121,7 +166,7 @@ function publishTimeFromUtc(created_utc: number | null): string | undefined {
 }
 
 /**
- * 插件主逻辑，由主程序（gateway）在同一进程内调用，不再独立起进程。
+ * 插件主逻辑，由主程序（gateway）在同一进程内调用。
  */
 export async function run(options: PluginRunOptions): Promise<PluginRunResult> {
   const gatewayUrl = options.gatewayUrl;
@@ -134,7 +179,6 @@ export async function run(options: PluginRunOptions): Promise<PluginRunResult> {
   writeLog("start", { gatewayUrl, pluginKey, llmConcurrency });
 
   try {
-    // 一、获取数据
     writeLog("fetch_rules_start");
     const rulesResp = await client.get<{ items: RuleItem[] }>(
       "/api/rules",
@@ -158,22 +202,31 @@ export async function run(options: PluginRunOptions): Promise<PluginRunResult> {
     const toMarkProcessed = new Set<string>();
     const emptyContentIds: string[] = [];
     const noMatchIds: string[] = [];
-    const candidateList: { post: RedditPostItem; rule: RuleItem }[] = [];
+    const candidateList: {
+      post: RedditPostItem;
+      rule: RuleItem;
+      matchedKeywords: string[];
+    }[] = [];
 
     const title = (p: RedditPostItem) => p.title ?? "";
     const content = (p: RedditPostItem) => p.content ?? "";
 
+    const rulePartsList = rules.map((r) => parseKeywordRules(r.keywords ?? []));
     for (const post of posts) {
       if (content(post).trim() === "") {
         emptyContentIds.push(post.id);
         toMarkProcessed.add(post.id);
         continue;
       }
-      const rulePartsList = rules.map((r) => parseKeywordRules(r.keywords ?? []));
       let matched = false;
       for (let i = 0; i < rules.length; i++) {
         if (ruleMatches(rulePartsList[i], title(post), content(post))) {
-          candidateList.push({ post, rule: rules[i] });
+          const rule = rules[i];
+          candidateList.push({
+            post,
+            rule,
+            matchedKeywords: matchedKeywords(rule.keywords ?? [], title(post), content(post))
+          });
           matched = true;
           break;
         }
@@ -204,17 +257,18 @@ export async function run(options: PluginRunOptions): Promise<PluginRunResult> {
       };
     }
 
-    // 三、LLM 批量匹配
     interface ValidateResult {
       post: RedditPostItem;
       rule: RuleItem;
+      matchedKeywords: string[];
       passed: boolean;
       summary?: string;
+      hotword?: string;
     }
     const validateResults: ValidateResult[] = await runWithLimit(
       candidateList,
       llmConcurrency,
-      async ({ post, rule }) => {
+      async ({ post, rule, matchedKeywords: mk }) => {
         const body: ValidateBody = {
           ruleId: rule.id,
           pluginKey,
@@ -226,8 +280,10 @@ export async function run(options: PluginRunOptions): Promise<PluginRunResult> {
         return {
           post,
           rule,
+          matchedKeywords: mk,
           passed: res.data?.passed ?? false,
-          summary: res.data?.summary
+          summary: res.data?.summary,
+          hotword: res.data?.hotword
         };
       }
     );
@@ -238,8 +294,10 @@ export async function run(options: PluginRunOptions): Promise<PluginRunResult> {
       passed: passedList.length
     });
 
-    // 四、入库
-    for (const { post, rule, summary } of passedList) {
+    let savedCount = 0;
+    let saveFailedCount = 0;
+    writeLog("save_data_start", { toSave: passedList.length });
+    for (const { post, rule, summary, hotword, matchedKeywords: mk } of passedList) {
       const record: DataRecordBody = {
         ruleId: rule.id,
         uniqueKey: post.id,
@@ -247,11 +305,12 @@ export async function run(options: PluginRunOptions): Promise<PluginRunResult> {
         title: title(post),
         content: content(post),
         url: buildRedditUrl(post),
-        keywords: rule.keywords ?? [],
+        keywords: mk,
         tracking: false,
         crawlTime: new Date().toISOString(),
         publishTime: publishTimeFromUtc(post.created_utc ?? null),
         summary: summary ?? undefined,
+        hotWords: hotword ?? undefined,
         read: false,
         heatScore: 0,
         extra: {
@@ -259,25 +318,47 @@ export async function run(options: PluginRunOptions): Promise<PluginRunResult> {
           source: post.source ?? undefined
         }
       };
-      await client.post("/api/data", record);
+      try {
+        await client.post("/api/data", record);
+        savedCount++;
+      } catch (err) {
+        saveFailedCount++;
+        writeLog("save_data_error", {
+          uniqueKey: record.uniqueKey,
+          ruleId: record.ruleId,
+          error: axiosErrorToDetail(err)
+        });
+      }
     }
+    writeLog("save_data_done", {
+      saved: savedCount,
+      failed: saveFailedCount
+    });
 
-    // 标记所有处理过的帖子为已处理（含空内容、未匹配、以及参与 LLM 的）
     for (const { post } of candidateList) toMarkProcessed.add(post.id);
     if (toMarkProcessed.size > 0) {
-      await client.post("/api/reddit/posts/mark-processed", {
-        ids: Array.from(toMarkProcessed)
-      });
+      try {
+        await client.post("/api/reddit/posts/mark-processed", {
+          ids: Array.from(toMarkProcessed)
+        });
+      } catch (err) {
+        writeLog("mark_processed_error", {
+          count: toMarkProcessed.size,
+          error: axiosErrorToDetail(err)
+        });
+      }
     }
 
     writeLog("success", {
       markedProcessed: toMarkProcessed.size,
-      saved: passedList.length
+      passed: passedList.length,
+      saved: savedCount,
+      saveFailed: saveFailedCount
     });
     return {
-      success: true,
+      success: saveFailedCount === 0,
       totalCount: posts.length,
-      matchedCount: passedList.length
+      matchedCount: savedCount
     };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -286,19 +367,4 @@ export async function run(options: PluginRunOptions): Promise<PluginRunResult> {
     console.error("reddit plugin error", msg);
     return { success: false, totalCount: 0, matchedCount: 0 };
   }
-}
-
-/** 仅在被直接运行（node dist/main.js）时执行，保留路径与入口以便调试 */
-function main(): void {
-  const opts: PluginRunOptions = {
-    gatewayUrl: config.gatewayUrl,
-    pluginKey: config.pluginKey
-  };
-  run(opts)
-    .then((r) => process.exit(r.success ? 0 : 1))
-    .catch(() => process.exit(1));
-}
-
-if (require.main === module) {
-  main();
 }

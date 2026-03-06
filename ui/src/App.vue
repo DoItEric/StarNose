@@ -16,6 +16,9 @@
         <a-menu-item key="data">
           {{ $t("menu.data") }}
         </a-menu-item>
+        <a-menu-item key="tracking">
+          {{ $t("menu.tracking") }}
+        </a-menu-item>
         <a-menu-item key="analysis">
           {{ $t("menu.analysis") }}
         </a-menu-item>
@@ -65,6 +68,8 @@ const currentTitle = computed(() => {
       return t("menu.rules");
     case "data":
       return t("menu.data");
+    case "tracking":
+      return t("menu.tracking");
     case "analysis":
       return t("menu.analysis");
     case "settings":

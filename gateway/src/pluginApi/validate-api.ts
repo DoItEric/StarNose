@@ -5,7 +5,7 @@ import type { PluginRegistry } from "../plugin-registry/types";
 import type {
   ValidateContentRequest,
   ValidateContentResponse
-} from "starnose-api-model";
+} from "../api-model";
 import { validateContentWithLLM } from "../llm/validator";
 
 interface Deps {

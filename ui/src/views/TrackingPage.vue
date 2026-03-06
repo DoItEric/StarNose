@@ -2,7 +2,7 @@
   <div>
     <div class="page-header">
       <div class="page-header__row">
-        <h2>数据</h2>
+        <h2>跟踪</h2>
         <a-space>
           <span class="toolbar-label">每页</span>
           <a-select
@@ -105,11 +105,7 @@
             >
               忽略
             </a-button>
-            <a-button
-              type="link"
-              size="small"
-              @click.stop="toggleTracking(record)"
-            >
+            <a-button type="link" size="small" @click.stop="toggleTracking(record)">
               {{ record.tracking ? "取消跟踪" : "跟踪" }}
             </a-button>
           </a-space>
@@ -239,7 +235,7 @@ const filters = ref<{
   crawlRange: null,
   publishRange: null,
   plugins: [],
-  readStatus: "unread",
+  readStatus: "all",
   keyword: ""
 });
 
@@ -284,7 +280,7 @@ const currentRecord = ref<DataItem | null>(null);
 
 async function search(resetPage = false) {
   if (resetPage) pagination.value.page = 1;
-  const params: Record<string, unknown> = {};
+  const params: Record<string, unknown> = { trackingOnly: true };
 
   if (filters.value.crawlRange) {
     params.crawlTimeFrom = filters.value.crawlRange[0].toISOString();
@@ -355,6 +351,9 @@ async function toggleTracking(record: DataItem) {
   const next = !record.tracking;
   await setTracking(record.id, next);
   record.tracking = next;
+  if (!next) {
+    void search(false);
+  }
 }
 
 function openCard(record: DataItem) {

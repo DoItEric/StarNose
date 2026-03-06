@@ -11,6 +11,7 @@ export interface DataRecord {
   crawlTime: string; // ISO UTC
   publishTime?: string; // ISO UTC
   summary?: string;
+  hotWords?: string;
   read: boolean;
   remark?: string;
   heatScore: number; // 0-100
@@ -23,6 +24,7 @@ export interface ListDataQuery {
   publishTimeFrom?: string;
   publishTimeTo?: string;
   sources?: string[];
+  trackingOnly?: boolean;
   readStatus?: "all" | "read" | "unread";
   keyword?: string;
   page?: number;
@@ -42,4 +44,9 @@ export interface ListDataResponse {
 export interface TrackDataRequest {
   id: string;
   tracking: boolean;
+}
+
+export interface MarkDataReadRequest {
+  id: string;
+  read: boolean;
 }

@@ -24,11 +24,11 @@ const logDir = path.join(__dirname, "../logs");
 
 const pool = createPgPool();
 const pluginRegistry = initPluginRegistry(
-  path.resolve(__dirname, "../../plugins"),
+  path.join(__dirname, "plugins"),
   logDir
 );
 
-app.use("/web", createWebRouter({ pool, pluginRegistry }));
+app.use("/web", createWebRouter({ pool, pluginRegistry, logDir }));
 app.use("/api", createPluginApiRouter({ pool, pluginRegistry, logDir }));
 
 initScheduler({ pool, pluginRegistry, logDir });

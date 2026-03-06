@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS "public"."data_items" (
   "crawl_time" timestamptz NOT NULL,
   "publish_time" timestamptz,
   "summary" text,
+  "hot_words" text,
   "read" bool NOT NULL DEFAULT false,
   "remark" text,
   "heat_score" int4 NOT NULL DEFAULT 0,
@@ -30,3 +31,7 @@ COMMENT ON COLUMN "public"."data_items"."source" IS '插件源/信息源，如 r
 COMMENT ON COLUMN "public"."data_items"."tracking" IS '用户跟踪状态';
 COMMENT ON COLUMN "public"."data_items"."read" IS '未读状态，用户查看后更新';
 COMMENT ON COLUMN "public"."data_items"."extra" IS '信息源扩展字段，如 comment_count、like_count、subreddit 等';
+
+-- 若 data_items 已存在，可执行下面语句补字段
+ALTER TABLE "public"."data_items"
+  ADD COLUMN IF NOT EXISTS "hot_words" text;

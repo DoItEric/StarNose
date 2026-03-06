@@ -11,8 +11,23 @@
       :pagination="{ pageSize: 20 }"
       row-key="id"
     >
-      <template #bodyCell="{ column, record }">
-        <template v-if="column.key === 'action'">
+      <template #bodyCell="{ column, record, text }">
+        <template v-if="column.key === 'name' || column.key === 'keywordDescription' || column.key === 'description' || column.key === 'promptFile'">
+          <span class="table-cell-ellipsis" :title="text">{{ text ?? "" }}</span>
+        </template>
+        <template v-else-if="column.key === 'keywords'">
+          <span class="table-cell-ellipsis" :title="(record.keywords ?? []).join('，')">
+            {{ (record.keywords ?? []).join("，") }}
+          </span>
+        </template>
+        <template v-else-if="column.key === 'plugins'">
+          <span class="table-cell-ellipsis" :title="formatPluginsDisplay(record.plugins)">
+            {{ formatPluginsDisplay(record.plugins) }}
+          </span>
+        </template>
+        <template v-else-if="column.key === 'action'">
+          <a @click.stop="openEdit(record)">编辑</a>
+          <a-divider type="vertical" />
           <a @click.stop="toggleRule(record)">
             {{ record.disabled ? "启用" : "停用" }}
           </a>
@@ -31,88 +46,275 @@
 
     <a-modal
       v-model:open="createVisible"
-      title="新增规则"
+      :title="editId ? '编辑规则' : '新增规则'"
       :footer="null"
       width="720px"
     >
-      <div v-if="step === 1">
-        <a-form layout="vertical">
-          <a-form-item label="规则名称">
-            <a-input v-model:value="form.name" />
-          </a-form-item>
-          <a-form-item label="规则描述">
-            <a-textarea
-              v-model:value="form.description"
-              :rows="6"
-              placeholder="请尽可能详细地描述你关心的数据是什么样子的，越详细越好，例如包含哪些字段、使用场景、典型标题和正文示例等。"
-            />
-          </a-form-item>
-        </a-form>
-        <div class="modal-footer">
-          <a-button @click="closeCreate">取消</a-button>
-          <a-button type="primary" @click="nextStep">下一步</a-button>
-        </div>
-      </div>
+      <a-form layout="vertical">
+        <a-form-item label="规则名称">
+          <a-input v-model:value="form.name" />
+        </a-form-item>
+        <a-form-item label="关键字需求描述">
+          <a-textarea
+            v-model:value="form.keywordDescription"
+            :rows="4"
+            placeholder="请描述你希望用哪些关键词来检索数据，越详细越好，便于生成或补充关键词。"
+          />
+          <div class="action-buttons">
+            <a-button
+              :loading="generateLoading"
+              @click="handleGenerateKeywords"
+            >
+              生成关键词
+            </a-button>
+            <a-button
+              :loading="supplementLoading"
+              :disabled="form.keywords.length === 0"
+              @click="handleSupplementKeywords"
+            >
+              补充关键字
+            </a-button>
+          </div>
+        </a-form-item>
+        <a-form-item label="信息偏好">
+          <a-textarea
+            v-model:value="form.description"
+            :rows="4"
+            placeholder="描述你偏好的信息特征，用于 LLM 匹配与筛选内容。"
+          />
+        </a-form-item>
 
-      <div v-else>
-        <p>根据你的描述，系统已为你生成以下关键字，你可以删除不需要的关键字。</p>
-        <div class="keyword-list">
-          <a-tag
-            v-for="(keyword, index) in form.keywords"
-            :key="keyword + index"
-            closable
-            @close="removeKeyword(index)"
-          >
-            {{ keyword }}
-          </a-tag>
-        </div>
-        <div class="modal-footer">
-          <a-button @click="resetStep">重新设定</a-button>
-          <a-button @click="closeCreate">取消</a-button>
-          <a-button type="primary" @click="submitRule">完成</a-button>
-        </div>
+        <a-form-item label="关键字">
+          <a-input-search
+            v-model:value="keywordSearch"
+            placeholder="输入以模糊匹配关键字"
+            allow-clear
+            class="keyword-search"
+          />
+          <div ref="keywordListRef" class="keyword-list-wrap">
+            <div
+              v-for="(item, index) in paginatedKeywords"
+              :key="item.text + '-' + resolvedKeywordIndex(item)"
+              :class="['keyword-row', { 'keyword-row-new': item.isNew }]"
+            >
+              <span class="keyword-text">{{ item.text }}</span>
+              <a-button
+                type="text"
+                size="small"
+                danger
+                class="keyword-delete"
+                @click="removeKeyword(resolvedKeywordIndex(item))"
+              >
+                删除
+              </a-button>
+            </div>
+            <div v-if="filteredKeywords.length === 0" class="keyword-empty">
+              暂无关键字，可点击「生成关键词」或「补充关键字」
+            </div>
+          </div>
+          <a-pagination
+            v-if="filteredKeywords.length > pageSize"
+            v-model:current="keywordPage"
+            v-model:page-size="pageSize"
+            :total="filteredKeywords.length"
+            size="small"
+            show-size-changer
+            :page-size-options="['10', '20', '50']"
+            show-total
+            class="keyword-pagination"
+          />
+          <div class="keyword-add-row">
+            <a-input
+              v-model:value="addKeywordInput"
+              placeholder="输入关键字，多个用逗号分隔"
+              allow-clear
+              class="keyword-add-input"
+              @press-enter="addKeywordsFromInput"
+            />
+            <a-button type="primary" @click="addKeywordsFromInput">Add</a-button>
+          </div>
+        </a-form-item>
+
+        <a-form-item label="生效插件">
+          <a-checkbox-group v-model:value="form.selectedPluginKeys" class="plugin-checkbox-group">
+            <a-checkbox
+              v-for="p in pluginList"
+              :key="p.key"
+              :value="p.key"
+            >
+              {{ p.name || p.key }}
+            </a-checkbox>
+          </a-checkbox-group>
+          <div v-if="pluginList.length === 0" class="plugin-empty">暂无可用插件</div>
+        </a-form-item>
+
+        <a-form-item label="筛选 Prompt 文件">
+          <a-input
+            v-model:value="form.promptFile"
+            placeholder="prompt 文件名（不含扩展名），如 validate_content_zh"
+          />
+        </a-form-item>
+      </a-form>
+      <div class="modal-footer">
+        <a-button @click="closeCreate">取消</a-button>
+        <a-button type="primary" @click="submitRule">保存</a-button>
       </div>
     </a-modal>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from "vue";
+import { ref, computed, onMounted, nextTick } from "vue";
 import { http } from "@/api/http";
 
 interface RuleItem {
   id: string;
   name: string;
+  keywordDescription?: string;
+  description?: string;
   keywords: string[];
+  plugins?: string;
+  promptFile?: string;
   lastRunAt?: string;
   disabled: boolean;
 }
 
+interface PluginOption {
+  key: string;
+  name: string;
+}
+
+interface KeywordItem {
+  text: string;
+  isNew: boolean;
+}
+
 const columns = [
-  { title: "规则名称", dataIndex: "name", key: "name" },
+  {
+    title: "规则名称",
+    dataIndex: "name",
+    key: "name",
+    width: 120,
+    ellipsis: true
+  },
+  {
+    title: "关键字描述",
+    dataIndex: "keywordDescription",
+    key: "keywordDescription",
+    width: 160,
+    ellipsis: true
+  },
+  {
+    title: "偏好描述",
+    dataIndex: "description",
+    key: "description",
+    width: 160,
+    ellipsis: true
+  },
   {
     title: "关键字",
     dataIndex: "keywords",
     key: "keywords",
-    customRender: ({ value }: { value: string[] }) =>
-      value?.join("，") ?? ""
+    width: 200,
+    ellipsis: true
   },
-  { title: "上次调度时间", dataIndex: "lastRunAt", key: "lastRunAt" },
+  {
+    title: "匹配组件",
+    dataIndex: "plugins",
+    key: "plugins",
+    width: 120,
+    ellipsis: true
+  },
+  {
+    title: "筛选 Prompt",
+    dataIndex: "promptFile",
+    key: "promptFile",
+    width: 120,
+    ellipsis: true
+  },
+  {
+    title: "上次调度时间",
+    dataIndex: "lastRunAt",
+    key: "lastRunAt",
+    width: 100
+  },
   {
     title: "操作",
-    key: "action"
+    key: "action",
+    width: 140
   }
 ];
 
 const rules = ref<RuleItem[]>([]);
-
 const createVisible = ref(false);
-const step = ref<1 | 2>(1);
+const editId = ref<string | null>(null);
 const form = ref({
   name: "",
+  keywordDescription: "",
   description: "",
-  keywords: [] as string[]
+  keywords: [] as KeywordItem[],
+  selectedPluginKeys: [] as string[],
+  promptFile: ""
 });
+
+const pluginList = ref<PluginOption[]>([]);
+
+const generateLoading = ref(false);
+const supplementLoading = ref(false);
+const keywordSearch = ref("");
+const keywordPage = ref(1);
+const pageSize = ref(10);
+const addKeywordInput = ref("");
+const keywordListRef = ref<HTMLElement | null>(null);
+
+const filteredKeywords = computed(() => {
+  const q = keywordSearch.value.trim().toLowerCase();
+  if (!q) return form.value.keywords;
+  return form.value.keywords.filter((k) =>
+    k.text.toLowerCase().includes(q)
+  );
+});
+
+const paginatedKeywords = computed(() => {
+  const list = filteredKeywords.value;
+  const start = (keywordPage.value - 1) * pageSize.value;
+  return list.slice(start, start + pageSize.value);
+});
+
+function resolvedKeywordIndex(item: KeywordItem) {
+  return form.value.keywords.findIndex((k) => k === item);
+}
+
+/** 解析存储格式 ,key1,key2, 为 key 数组 */
+function parsePluginsString(s: string | undefined | null): string[] {
+  if (!s || typeof s !== "string") return [];
+  return s.split(",").map((x) => x.trim()).filter(Boolean);
+}
+
+/** 将规则的 plugins 字符串格式化为展示文本（用 pluginList 的 name） */
+function formatPluginsDisplay(plugins: string | undefined): string {
+  const keys = parsePluginsString(plugins);
+  if (keys.length === 0) return "";
+  const nameMap = new Map(pluginList.value.map((p) => [p.key, p.name || p.key]));
+  return keys.map((k) => nameMap.get(k) ?? k).join("，");
+}
+
+/** 将 key 数组序列化为 ,key1,key2, */
+function serializePlugins(keys: string[]): string {
+  return "," + keys.join(",") + ",";
+}
+
+async function loadPlugins() {
+  try {
+    const resp = await http.get("/plugins");
+    pluginList.value = (resp.data.items ?? []).map((p: { key: string; name?: string }) => ({
+      key: p.key,
+      name: p.name ?? p.key
+    }));
+  } catch {
+    pluginList.value = [];
+  }
+}
 
 async function loadRules() {
   const resp = await http.get("/rules");
@@ -121,40 +323,126 @@ async function loadRules() {
 
 onMounted(() => {
   void loadRules();
+  void loadPlugins();
 });
 
 function openCreate() {
+  editId.value = null;
+  form.value = {
+    name: "",
+    keywordDescription: "",
+    description: "",
+    keywords: [],
+    selectedPluginKeys: [],
+    promptFile: ""
+  };
+  keywordSearch.value = "";
+  keywordPage.value = 1;
+  addKeywordInput.value = "";
   createVisible.value = true;
-  step.value = 1;
+}
+
+async function openEdit(rule: RuleItem) {
+  editId.value = rule.id;
+  try {
+    const resp = await http.get(`/rules/${rule.id}`);
+    const r = resp.data;
+    form.value = {
+      name: r.name ?? "",
+      keywordDescription: r.keywordDescription ?? "",
+      description: r.description ?? "",
+      keywords: (r.keywords ?? []).map((t: string) => ({ text: t, isNew: false })),
+      selectedPluginKeys: parsePluginsString(r.plugins),
+      promptFile: r.promptFile ?? ""
+    };
+  } catch {
+    form.value = { name: "", keywordDescription: "", description: "", keywords: [], selectedPluginKeys: [], promptFile: "" };
+  }
+  keywordSearch.value = "";
+  keywordPage.value = 1;
+  addKeywordInput.value = "";
+  createVisible.value = true;
 }
 
 function closeCreate() {
   createVisible.value = false;
 }
 
-async function nextStep() {
-  const resp = await http.post("/rules/generate-keywords", {
-    name: form.value.name,
-    description: form.value.description
-  });
-  form.value.keywords = resp.data.keywords ?? [];
-  step.value = 2;
+async function handleGenerateKeywords() {
+  const desc = form.value.keywordDescription?.trim();
+  if (!desc) return;
+  generateLoading.value = true;
+  try {
+    const resp = await http.post("/rules/generate-keywords", {
+      name: form.value.name,
+      keywordDescription: desc
+    });
+    const list = (resp.data.keywords ?? []).map((t: string) => ({
+      text: t,
+      isNew: false
+    }));
+    form.value.keywords = list;
+    keywordPage.value = 1;
+  } finally {
+    generateLoading.value = false;
+  }
 }
 
-function resetStep() {
-  step.value = 1;
+async function handleSupplementKeywords() {
+  const desc = form.value.keywordDescription?.trim();
+  if (!desc || form.value.keywords.length === 0) return;
+  supplementLoading.value = true;
+  const startLen = form.value.keywords.length;
+  try {
+    const resp = await http.post("/rules/supplement-keywords", {
+      keywordDescription: desc,
+      keywords: form.value.keywords.map((k) => k.text)
+    });
+    const appended = (resp.data.keywords ?? []).map((t: string) => ({
+      text: t,
+      isNew: true
+    }));
+    form.value.keywords = form.value.keywords.concat(appended);
+    keywordPage.value = Math.ceil((startLen + appended.length) / pageSize.value);
+    await nextTick();
+    keywordListRef.value?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  } finally {
+    supplementLoading.value = false;
+  }
 }
 
 function removeKeyword(index: number) {
   form.value.keywords.splice(index, 1);
 }
 
+function addKeywordsFromInput() {
+  const raw = addKeywordInput.value.trim();
+  if (!raw) return;
+  const parts = raw.split(/[,，]/).map((s) => s.trim()).filter(Boolean);
+  const existing = new Set(form.value.keywords.map((k) => k.text));
+  for (const p of parts) {
+    if (!existing.has(p)) {
+      form.value.keywords.push({ text: p, isNew: false });
+      existing.add(p);
+    }
+  }
+  addKeywordInput.value = "";
+}
+
 async function submitRule() {
-  await http.post("/rules", {
+  const payload = {
     name: form.value.name,
+    keywordDescription: form.value.keywordDescription,
     description: form.value.description,
-    keywords: form.value.keywords
-  });
+    keywords: form.value.keywords.map((k) => k.text),
+    plugins: serializePlugins(form.value.selectedPluginKeys),
+    promptFile: form.value.promptFile?.trim() || undefined
+  };
+  if (editId.value) {
+    await http.post("/rules", { ...payload, id: editId.value });
+  } else {
+    await http.post("/rules", payload);
+  }
   createVisible.value = false;
   await loadRules();
 }
@@ -180,15 +468,91 @@ async function deleteRule(rule: RuleItem) {
   margin-bottom: 16px;
 }
 
+.table-cell-ellipsis {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.action-buttons {
+  display: flex;
+  gap: 8px;
+}
+
+.keyword-search {
+  margin-bottom: 8px;
+  max-width: 320px;
+}
+
+.keyword-list-wrap {
+  min-height: 120px;
+  max-height: 280px;
+  overflow-y: auto;
+  border: 1px solid #d9d9d9;
+  border-radius: 6px;
+  padding: 8px;
+  background: #fafafa;
+}
+
+.keyword-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 8px;
+  border-radius: 4px;
+}
+
+.keyword-row-new {
+  background: rgba(255, 77, 79, 0.08);
+}
+
+.keyword-text {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.keyword-delete {
+  flex-shrink: 0;
+}
+
+.keyword-empty {
+  color: #999;
+  padding: 16px;
+  text-align: center;
+}
+
+.keyword-pagination {
+  margin-top: 8px;
+}
+
+.keyword-add-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+  align-items: center;
+}
+
+.keyword-add-input {
+  flex: 1;
+}
+
+.plugin-checkbox-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+}
+
+.plugin-empty {
+  color: #999;
+  font-size: 12px;
+}
+
 .modal-footer {
   margin-top: 16px;
   display: flex;
   justify-content: flex-end;
   gap: 8px;
 }
-
-.keyword-list {
-  min-height: 80px;
-}
 </style>
-

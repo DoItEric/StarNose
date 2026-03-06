@@ -3,5 +3,5 @@
   "name": "Reddit Plugin",
   "version": "0.1.0",
   "description": "Reddit data source plugin for StarNose",
-  "entry": "dist/main.js"
+  "entry": "main.js"
 }

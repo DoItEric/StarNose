@@ -11,6 +11,7 @@ import { createStatusController } from "./status-controller";
 interface Deps {
   pool: Pool;
   pluginRegistry: PluginRegistry;
+  logDir: string;
 }
 
 export function createWebRouter(deps: Deps): Router {

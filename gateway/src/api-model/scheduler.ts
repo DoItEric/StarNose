@@ -19,4 +19,6 @@ export interface ValidateContentResponse {
   reason?: string;
   /** 匹配时从 LLM 返回的 300 字以内摘要（withSummary 为 true 时有效） */
   summary?: string;
+  /** 匹配时从 LLM 返回的热词（英文逗号分割，withSummary 为 true 时有效） */
+  hotword?: string;
 }

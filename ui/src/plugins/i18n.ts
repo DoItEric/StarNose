@@ -6,6 +6,7 @@ const messages = {
       datasources: "数据源",
       rules: "规则",
       data: "数据",
+      tracking: "跟踪",
       analysis: "分析",
       settings: "系统设置"
     },
@@ -23,6 +24,7 @@ const messages = {
       datasources: "Data Sources",
       rules: "Rules",
       data: "Data",
+      tracking: "Tracking",
       analysis: "Analysis",
       settings: "Settings"
     },

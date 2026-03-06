@@ -2,7 +2,7 @@ import type { Router, Request, Response } from "express";
 import express from "express";
 import type { Pool } from "pg";
 import type { PluginRegistry } from "../plugin-registry/types";
-import type { DataRecord } from "starnose-api-model";
+import type { DataRecord } from "../api-model";
 
 interface Deps {
   pool: Pool;
@@ -29,6 +29,7 @@ export function createDataApi({ pool }: Deps): Router {
            crawl_time,
            publish_time,
            summary,
+           hot_words,
            read,
            remark,
            heat_score,
@@ -39,10 +40,11 @@ export function createDataApi({ pool }: Deps): Router {
            $9,
            $10,
            $11,
-           COALESCE($12,false),
-           $13,
-           COALESCE($14,0),
-           COALESCE($15,'{}'::jsonb)
+           $12,
+           COALESCE($13,false),
+           $14,
+           COALESCE($15,0),
+           COALESCE($16,'{}'::jsonb)
          )
          ON CONFLICT (source, unique_key) DO UPDATE SET
            rule_id = EXCLUDED.rule_id,
@@ -53,6 +55,7 @@ export function createDataApi({ pool }: Deps): Router {
            crawl_time = EXCLUDED.crawl_time,
            publish_time = EXCLUDED.publish_time,
            summary = EXCLUDED.summary,
+           hot_words = EXCLUDED.hot_words,
            read = EXCLUDED.read,
            remark = EXCLUDED.remark,
            heat_score = EXCLUDED.heat_score,
@@ -70,6 +73,7 @@ export function createDataApi({ pool }: Deps): Router {
           body.crawlTime,
           body.publishTime ?? null,
           body.summary ?? null,
+          body.hotWords ?? null,
           body.read ?? false,
           body.remark ?? null,
           body.heatScore ?? 0,

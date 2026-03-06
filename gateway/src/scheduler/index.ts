@@ -31,6 +31,7 @@ export function initScheduler({
     if (enabledPlugins.length === 0 || !runPlugin) return;
 
     for (const plugin of enabledPlugins) {
+      if (!pluginRegistry.hasPluginRunner(plugin.key)) continue;
       (async () => {
         try {
           const result = await runPlugin(plugin.key, {
