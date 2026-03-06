@@ -22,6 +22,7 @@ interface RuleItem {
   name: string;
   description: string;
   keywords: string[];
+  negativeKeywords?: string[];
   disabled: boolean;
   promptFile?: string;
 }
@@ -212,6 +213,9 @@ export async function run(options: PluginRunOptions): Promise<PluginRunResult> {
     const content = (p: RedditPostItem) => p.content ?? "";
 
     const rulePartsList = rules.map((r) => parseKeywordRules(r.keywords ?? []));
+    const negativeRulePartsList = rules.map((r) =>
+      parseKeywordRules(r.negativeKeywords ?? [])
+    );
     for (const post of posts) {
       if (content(post).trim() === "") {
         emptyContentIds.push(post.id);
@@ -222,6 +226,17 @@ export async function run(options: PluginRunOptions): Promise<PluginRunResult> {
       for (let i = 0; i < rules.length; i++) {
         if (ruleMatches(rulePartsList[i], title(post), content(post))) {
           const rule = rules[i];
+          // 正面命中后再做负面匹配：若负面命中，则视为该规则不匹配，继续尝试下一条规则
+          if (
+            (rule.negativeKeywords?.length ?? 0) > 0 &&
+            ruleMatches(
+              negativeRulePartsList[i],
+              title(post),
+              content(post)
+            )
+          ) {
+            continue;
+          }
           candidateList.push({
             post,
             rule,

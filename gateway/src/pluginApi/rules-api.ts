@@ -33,6 +33,7 @@ export function createRulesApi({ pool }: Deps): Router {
            name,
            description,
            keywords,
+           negative_keywords AS "negativeKeywords",
            disabled,
            last_run_at AS "lastRunAt",
            remark,

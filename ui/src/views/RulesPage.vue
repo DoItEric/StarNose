@@ -135,6 +135,57 @@
           </div>
         </a-form-item>
 
+        <a-form-item label="负面关键字（命中则忽略）">
+          <a-input-search
+            v-model:value="negativeKeywordSearch"
+            placeholder="输入以模糊匹配负面关键字"
+            allow-clear
+            class="keyword-search"
+          />
+          <div class="keyword-list-wrap">
+            <div
+              v-for="item in paginatedNegativeKeywords"
+              :key="item.text + '-' + resolvedNegativeKeywordIndex(item)"
+              class="keyword-row"
+            >
+              <span class="keyword-text">{{ item.text }}</span>
+              <a-button
+                type="text"
+                size="small"
+                danger
+                class="keyword-delete"
+                @click="removeNegativeKeyword(resolvedNegativeKeywordIndex(item))"
+              >
+                删除
+              </a-button>
+            </div>
+            <div v-if="filteredNegativeKeywords.length === 0" class="keyword-empty">
+              暂无负面关键字（该项不自动生成，请手工添加）
+            </div>
+          </div>
+          <a-pagination
+            v-if="filteredNegativeKeywords.length > negativePageSize"
+            v-model:current="negativeKeywordPage"
+            v-model:page-size="negativePageSize"
+            :total="filteredNegativeKeywords.length"
+            size="small"
+            show-size-changer
+            :page-size-options="['10', '20', '50']"
+            show-total
+            class="keyword-pagination"
+          />
+          <div class="keyword-add-row">
+            <a-input
+              v-model:value="addNegativeKeywordInput"
+              placeholder="输入负面关键字，多个用逗号分隔"
+              allow-clear
+              class="keyword-add-input"
+              @press-enter="addNegativeKeywordsFromInput"
+            />
+            <a-button type="primary" @click="addNegativeKeywordsFromInput">Add</a-button>
+          </div>
+        </a-form-item>
+
         <a-form-item label="生效插件">
           <a-checkbox-group v-model:value="form.selectedPluginKeys" class="plugin-checkbox-group">
             <a-checkbox
@@ -173,6 +224,7 @@ interface RuleItem {
   keywordDescription?: string;
   description?: string;
   keywords: string[];
+  negativeKeywords?: string[];
   plugins?: string;
   promptFile?: string;
   lastRunAt?: string;
@@ -253,6 +305,7 @@ const form = ref({
   keywordDescription: "",
   description: "",
   keywords: [] as KeywordItem[],
+  negativeKeywords: [] as KeywordItem[],
   selectedPluginKeys: [] as string[],
   promptFile: ""
 });
@@ -266,6 +319,11 @@ const keywordPage = ref(1);
 const pageSize = ref(10);
 const addKeywordInput = ref("");
 const keywordListRef = ref<HTMLElement | null>(null);
+
+const negativeKeywordSearch = ref("");
+const negativeKeywordPage = ref(1);
+const negativePageSize = ref(10);
+const addNegativeKeywordInput = ref("");
 
 const filteredKeywords = computed(() => {
   const q = keywordSearch.value.trim().toLowerCase();
@@ -283,6 +341,24 @@ const paginatedKeywords = computed(() => {
 
 function resolvedKeywordIndex(item: KeywordItem) {
   return form.value.keywords.findIndex((k) => k === item);
+}
+
+const filteredNegativeKeywords = computed(() => {
+  const q = negativeKeywordSearch.value.trim().toLowerCase();
+  if (!q) return form.value.negativeKeywords;
+  return form.value.negativeKeywords.filter((k) =>
+    k.text.toLowerCase().includes(q)
+  );
+});
+
+const paginatedNegativeKeywords = computed(() => {
+  const list = filteredNegativeKeywords.value;
+  const start = (negativeKeywordPage.value - 1) * negativePageSize.value;
+  return list.slice(start, start + negativePageSize.value);
+});
+
+function resolvedNegativeKeywordIndex(item: KeywordItem) {
+  return form.value.negativeKeywords.findIndex((k) => k === item);
 }
 
 /** 解析存储格式 ,key1,key2, 为 key 数组 */
@@ -333,12 +409,16 @@ function openCreate() {
     keywordDescription: "",
     description: "",
     keywords: [],
+    negativeKeywords: [],
     selectedPluginKeys: [],
     promptFile: ""
   };
   keywordSearch.value = "";
   keywordPage.value = 1;
   addKeywordInput.value = "";
+  negativeKeywordSearch.value = "";
+  negativeKeywordPage.value = 1;
+  addNegativeKeywordInput.value = "";
   createVisible.value = true;
 }
 
@@ -352,15 +432,19 @@ async function openEdit(rule: RuleItem) {
       keywordDescription: r.keywordDescription ?? "",
       description: r.description ?? "",
       keywords: (r.keywords ?? []).map((t: string) => ({ text: t, isNew: false })),
+      negativeKeywords: (r.negativeKeywords ?? []).map((t: string) => ({ text: t, isNew: false })),
       selectedPluginKeys: parsePluginsString(r.plugins),
       promptFile: r.promptFile ?? ""
     };
   } catch {
-    form.value = { name: "", keywordDescription: "", description: "", keywords: [], selectedPluginKeys: [], promptFile: "" };
+    form.value = { name: "", keywordDescription: "", description: "", keywords: [], negativeKeywords: [], selectedPluginKeys: [], promptFile: "" };
   }
   keywordSearch.value = "";
   keywordPage.value = 1;
   addKeywordInput.value = "";
+  negativeKeywordSearch.value = "";
+  negativeKeywordPage.value = 1;
+  addNegativeKeywordInput.value = "";
   createVisible.value = true;
 }
 
@@ -429,12 +513,31 @@ function addKeywordsFromInput() {
   addKeywordInput.value = "";
 }
 
+function removeNegativeKeyword(index: number) {
+  form.value.negativeKeywords.splice(index, 1);
+}
+
+function addNegativeKeywordsFromInput() {
+  const raw = addNegativeKeywordInput.value.trim();
+  if (!raw) return;
+  const parts = raw.split(/[,，]/).map((s) => s.trim()).filter(Boolean);
+  const existing = new Set(form.value.negativeKeywords.map((k) => k.text));
+  for (const p of parts) {
+    if (!existing.has(p)) {
+      form.value.negativeKeywords.push({ text: p, isNew: false });
+      existing.add(p);
+    }
+  }
+  addNegativeKeywordInput.value = "";
+}
+
 async function submitRule() {
   const payload = {
     name: form.value.name,
     keywordDescription: form.value.keywordDescription,
     description: form.value.description,
     keywords: form.value.keywords.map((k) => k.text),
+    negativeKeywords: form.value.negativeKeywords.map((k) => k.text),
     plugins: serializePlugins(form.value.selectedPluginKeys),
     promptFile: form.value.promptFile?.trim() || undefined
   };

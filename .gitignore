@@ -40,6 +40,7 @@ plugins/**/node_modules/
 plugins/**/dist/
 plugins/**/.cache/
 plugins/**/coverage/
+plugins/**/docs/
 
 #############
 # LLM / logs
@@ -82,6 +83,11 @@ Desktop.ini
 #############
 # Misc      #
 #############
+
+# Docs (keep local, ignore in git)
+doc/
+**/doc/
+
 coverage/
 .sass-cache/
 .eslintcache

@@ -34,6 +34,7 @@ export function createRulesController({ pool, logDir }: Deps): Router {
            keyword_description AS "keywordDescription",
            description,
            keywords,
+           negative_keywords AS "negativeKeywords",
            disabled,
            plugins,
            prompt_file AS "promptFile",
@@ -68,6 +69,7 @@ export function createRulesController({ pool, logDir }: Deps): Router {
            keyword_description AS "keywordDescription",
            description,
            keywords,
+           negative_keywords AS "negativeKeywords",
            disabled,
            plugins,
            prompt_file AS "promptFile",
@@ -117,16 +119,18 @@ export function createRulesController({ pool, logDir }: Deps): Router {
                  keyword_description = $2,
                  description = $3,
                  keywords = $4,
-                 plugins = $5,
-                 prompt_file = $6,
-                 disabled = COALESCE($7, disabled),
+                 negative_keywords = $5,
+                 plugins = $6,
+                 prompt_file = $7,
+                 disabled = COALESCE($8, disabled),
                  updated_at = now()
-           WHERE id = $8`,
+           WHERE id = $9`,
           [
             body.name,
             body.keywordDescription ?? null,
             body.description,
             body.keywords,
+            body.negativeKeywords ?? null,
             body.plugins ?? null,
             body.promptFile ?? null,
             body.disabled ?? null,
@@ -136,14 +140,15 @@ export function createRulesController({ pool, logDir }: Deps): Router {
         res.status(200).json({ id: body.id });
       } else {
         const insertResult = await pool.query(
-          `INSERT INTO rules (name, keyword_description, description, keywords, plugins, prompt_file, disabled, remark)
-           VALUES ($1, $2, $3, $4, $5, $6, COALESCE($7, false), NULL)
+          `INSERT INTO rules (name, keyword_description, description, keywords, negative_keywords, plugins, prompt_file, disabled, remark)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, COALESCE($8, false), NULL)
            RETURNING id`,
           [
             body.name,
             body.keywordDescription ?? null,
             body.description,
             body.keywords,
+            body.negativeKeywords ?? null,
             body.plugins ?? null,
             body.promptFile ?? null,
             body.disabled ?? null

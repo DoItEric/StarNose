@@ -6,6 +6,8 @@ export interface Rule {
   /** 信息偏好描述，用于 LLM 匹配 */
   description: string;
   keywords: string[];
+  /** 负面关键字：命中则忽略该条数据（仅手工配置，不参与生成） */
+  negativeKeywords?: string[];
   disabled: boolean;
   /** 规则生效的插件，存储格式为 ,key1,key2, 便于 LIKE 匹配 */
   plugins?: string;
@@ -42,6 +44,8 @@ export interface SaveRuleRequest {
   /** 信息偏好描述，用于 LLM 匹配 */
   description: string;
   keywords: string[];
+  /** 负面关键字：命中则忽略该条数据 */
+  negativeKeywords?: string[];
   /** 规则生效的插件，格式 ,key1,key2, */
   plugins?: string;
   disabled?: boolean;
