@@ -3,6 +3,7 @@ export interface DataRecord {
   ruleId: string;
   uniqueKey: string; // e.g. URL MD5
   source: string;
+  channel?: string;
   title: string;
   content: string;
   url?: string;
@@ -49,4 +50,9 @@ export interface TrackDataRequest {
 export interface MarkDataReadRequest {
   id: string;
   read: boolean;
+}
+
+export interface BlacklistChannelRequest {
+  source: string;
+  channel: string;
 }

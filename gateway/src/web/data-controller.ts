@@ -3,6 +3,7 @@ import express from "express";
 import type { Pool } from "pg";
 import type { PluginRegistry } from "../plugin-registry/types";
 import type {
+  BlacklistChannelRequest,
   ListDataQuery,
   ListDataResponse,
   MarkDataReadRequest,
@@ -128,6 +129,7 @@ export function createDataController({ pool }: Deps): Router {
            rule_id AS "ruleId",
            unique_key AS "uniqueKey",
            source,
+           channel,
            title,
            content,
            url,
@@ -168,7 +170,9 @@ export function createDataController({ pool }: Deps): Router {
       // 1) 更新 data_items.tracking
       await pool.query(
         `UPDATE data_items
-           SET tracking = $1
+           SET tracking = $1,
+               read = CASE WHEN $1 THEN true ELSE read END,
+               updated_at = now()
          WHERE id = $2`,
         [body.tracking, body.id]
       );
@@ -229,6 +233,76 @@ export function createDataController({ pool }: Deps): Router {
       res.status(500).json({ message: "Failed to update read status" });
     }
   });
+
+  // 将指定 channel 加入黑名单，并把对应数据全部标记为已读。
+  // 目前只实现 Reddit：将 channel 视为 subreddit，写入 reddit_subreddit_blacklist，
+  // 同时将 data_items 中 source='reddit' 且 channel=该值的记录标记为 read=true。
+  router.post(
+    "/channel/blacklist",
+    async (req: Request, res: Response): Promise<void> => {
+      const body = req.body as BlacklistChannelRequest;
+      const source = (body.source ?? "").trim();
+      const channel = (body.channel ?? "").trim();
+
+      if (!source || !channel) {
+        res.status(400).json({ message: "source and channel are required" });
+        return;
+      }
+
+      if (source !== "reddit") {
+        // 预留给未来其它数据源的实现
+        res.status(400).json({ message: "only reddit is supported for now" });
+        return;
+      }
+
+      try {
+        // 1) 写入 reddit_subreddit_blacklist
+        try {
+          await pool.query(
+            `INSERT INTO reddit_subreddit_blacklist (name)
+             VALUES ($1)
+             ON CONFLICT (name) DO NOTHING`,
+            [channel]
+          );
+        } catch (e) {
+          const pgErr = e as { code?: string };
+          // 42P10: there is no unique or exclusion constraint matching the ON CONFLICT specification
+          // 兼容旧库未加唯一约束的情况，降级为普通 INSERT（允许重复行）
+          if (pgErr.code === "42P10") {
+            await pool.query(
+              `INSERT INTO reddit_subreddit_blacklist (name)
+               VALUES ($1)`,
+              [channel]
+            );
+          } else {
+            throw e;
+          }
+        }
+
+        // 2) 将对应数据标记为已读
+        const result = await pool.query(
+          `UPDATE data_items
+              SET read = true,
+                  updated_at = now()
+            WHERE source = $1
+              AND channel = $2
+              AND read = false`,
+          [source, channel]
+        );
+
+        res.json({
+          ok: true,
+          updatedCount: result.rowCount ?? 0
+        });
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.error("POST /web/data/channel/blacklist error", err);
+        res
+          .status(500)
+          .json({ message: "Failed to blacklist channel and mark read" });
+      }
+    }
+  );
 
   return router;
 }

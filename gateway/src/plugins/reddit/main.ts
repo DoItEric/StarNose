@@ -75,6 +75,28 @@ function getShanghaiISOString(): string {
   return s.replace(" ", "T") + "+08:00";
 }
 
+async function fetchSubredditBlacklist(
+  client: AxiosInstance
+): Promise<Set<string>> {
+  try {
+    const resp = await client.get<{ items?: { name: string }[] }>(
+      "/api/reddit/subreddit-blacklist"
+    );
+    const list = resp.data?.items ?? [];
+    const set = new Set<string>();
+    for (const row of list) {
+      if (row?.name) {
+        set.add(row.name.toLowerCase());
+      }
+    }
+    writeLog("fetch_subreddit_blacklist_done", { count: set.size });
+    return set;
+  } catch (err) {
+    writeLog("fetch_subreddit_blacklist_error", axiosErrorToDetail(err));
+    return new Set();
+  }
+}
+
 function getLogFilePath(): string {
   const baseDir = path.resolve(__dirname, "..");
   const date = new Date().toISOString().slice(0, 10);
@@ -192,8 +214,12 @@ export async function run(options: PluginRunOptions): Promise<PluginRunResult> {
     const postsResp = await client.get<{ items: RedditPostItem[] }>(
       "/api/reddit/posts"
     );
-    const posts = postsResp.data?.items ?? [];
-    writeLog("fetch_posts_done", { count: posts.length });
+    const allPosts = postsResp.data?.items ?? [];
+    const posts = allPosts.slice(0, 120);
+    writeLog("fetch_posts_done", {
+      count: allPosts.length,
+      limitedCount: posts.length
+    });
 
     if (posts.length === 0) {
       writeLog("success", { reason: "no_posts" });
@@ -209,6 +235,9 @@ export async function run(options: PluginRunOptions): Promise<PluginRunResult> {
       matchedKeywords: string[];
     }[] = [];
 
+    // 加载 subreddit 黑名单，命中则跳过并直接标记为已处理
+    const subredditBlacklist = await fetchSubredditBlacklist(client);
+
     const title = (p: RedditPostItem) => p.title ?? "";
     const content = (p: RedditPostItem) => p.content ?? "";
 
@@ -217,6 +246,15 @@ export async function run(options: PluginRunOptions): Promise<PluginRunResult> {
       parseKeywordRules(r.negativeKeywords ?? [])
     );
     for (const post of posts) {
+      const subLower = (post.subreddit ?? "").toLowerCase();
+      if (subLower && subredditBlacklist.has(subLower)) {
+        toMarkProcessed.add(post.id);
+        writeLog("skip_post_blacklisted_subreddit", {
+          id: post.id,
+          subreddit: post.subreddit
+        });
+        continue;
+      }
       if (content(post).trim() === "") {
         emptyContentIds.push(post.id);
         toMarkProcessed.add(post.id);
@@ -291,15 +329,30 @@ export async function run(options: PluginRunOptions): Promise<PluginRunResult> {
           ruleDescription: rule.description,
           withSummary: true
         };
-        const res = await client.post<ValidateResponse>("/api/validate", body);
-        return {
-          post,
-          rule,
-          matchedKeywords: mk,
-          passed: res.data?.passed ?? false,
-          summary: res.data?.summary,
-          hotword: res.data?.hotword
-        };
+        try {
+          const res = await client.post<ValidateResponse>("/api/validate", body);
+          return {
+            post,
+            rule,
+            matchedKeywords: mk,
+            passed: res.data?.passed ?? false,
+            summary: res.data?.summary,
+            hotword: res.data?.hotword
+          };
+        } catch (err) {
+          // 某条校验请求失败时只记录日志并视为未通过，避免中断整个任务
+          writeLog("validate_error", {
+            ruleId: rule.id,
+            postId: post.id,
+            error: axiosErrorToDetail(err)
+          });
+          return {
+            post,
+            rule,
+            matchedKeywords: mk,
+            passed: false
+          };
+        }
       }
     );
 
@@ -317,6 +370,9 @@ export async function run(options: PluginRunOptions): Promise<PluginRunResult> {
         ruleId: rule.id,
         uniqueKey: post.id,
         source: "reddit",
+        // 将 subreddit 写入通用 channel 字段
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        ...(post.subreddit ? ({ channel: post.subreddit } as any) : {}),
         title: title(post),
         content: content(post),
         url: buildRedditUrl(post),

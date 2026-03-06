@@ -16,11 +16,18 @@ export function createDataApi({ pool }: Deps): Router {
   router.post("/", async (req: Request, res: Response) => {
     const body = req.body as DataRecord;
     try {
+      const keywords: string[] =
+        Array.isArray(body.keywords) && body.keywords.length > 0
+          ? body.keywords
+          : body.keywords
+          ? [String(body.keywords)]
+          : [];
       const result = await pool.query(
         `INSERT INTO data_items (
            rule_id,
            unique_key,
            source,
+           channel,
            title,
            content,
            url,
@@ -35,16 +42,16 @@ export function createDataApi({ pool }: Deps): Router {
            heat_score,
            extra
          ) VALUES (
-           $1,$2,$3,$4,$5,$6,$7,
-           COALESCE($8,false),
-           $9,
+           $1,$2,$3,$4,$5,$6,$7,$8,
+           COALESCE($9,false),
            $10,
            $11,
            $12,
-           COALESCE($13,false),
-           $14,
-           COALESCE($15,0),
-           COALESCE($16,'{}'::jsonb)
+           $13,
+           COALESCE($14,false),
+           $15,
+           COALESCE($16,0),
+           COALESCE($17,'{}'::jsonb)
          )
          ON CONFLICT (source, unique_key) DO UPDATE SET
            rule_id = EXCLUDED.rule_id,
@@ -52,6 +59,7 @@ export function createDataApi({ pool }: Deps): Router {
            content = EXCLUDED.content,
            url = EXCLUDED.url,
            keywords = EXCLUDED.keywords,
+           channel = EXCLUDED.channel,
            crawl_time = EXCLUDED.crawl_time,
            publish_time = EXCLUDED.publish_time,
            summary = EXCLUDED.summary,
@@ -62,22 +70,25 @@ export function createDataApi({ pool }: Deps): Router {
            extra = EXCLUDED.extra
          RETURNING id`,
         [
-          body.ruleId,
-          body.uniqueKey,
-          body.source,
-          body.title,
-          body.content,
-          body.url ?? null,
-          body.keywords ?? [],
-          body.tracking ?? false,
-          body.crawlTime,
-          body.publishTime ?? null,
-          body.summary ?? null,
-          body.hotWords ?? null,
-          body.read ?? false,
-          body.remark ?? null,
-          body.heatScore ?? 0,
-          body.extra ?? {}
+          body.ruleId, // $1
+          body.uniqueKey, // $2
+          body.source, // $3
+          // 通用 channel 字段，如 subreddit / topic 等，暂时由各插件自行决定是否传入
+          // Reddit 插件会写入 subreddit
+          (body as any).channel ?? null, // $4
+          body.title, // $5
+          body.content, // $6
+          body.url ?? null, // $7
+          keywords, // $8 (text[])
+          body.tracking ?? false, // $9
+          body.crawlTime, // $10
+          body.publishTime ?? null, // $11
+          body.summary ?? null, // $12
+          body.hotWords ?? null, // $13
+          body.read ?? false, // $14
+          body.remark ?? null, // $15
+          body.heatScore ?? 0, // $16
+          body.extra ?? {} // $17
         ]
       );
 

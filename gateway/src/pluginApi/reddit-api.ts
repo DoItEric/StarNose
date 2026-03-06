@@ -72,5 +72,58 @@ export function createRedditApi({ pool }: Deps): Router {
     }
   });
 
+  /** subreddit 黑名单列表 */
+  router.get(
+    "/subreddit-blacklist",
+    async (_req: Request, res: Response): Promise<void> => {
+      try {
+        const result = await pool.query<{ name: string }>(
+          `SELECT name FROM reddit_subreddit_blacklist ORDER BY name ASC`
+        );
+        res.json({ items: result.rows });
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.error(
+          "GET /api/reddit/subreddit-blacklist error",
+          err
+        );
+        res
+          .status(500)
+          .json({ message: "Failed to load subreddit blacklist" });
+      }
+    }
+  );
+
+  /** 添加 subreddit 到黑名单 */
+  router.post(
+    "/subreddit-blacklist",
+    async (req: Request, res: Response): Promise<void> => {
+      const body = req.body as { name?: string };
+      const name = (body.name ?? "").trim();
+      if (!name) {
+        res.status(400).json({ message: "name required" });
+        return;
+      }
+      try {
+        await pool.query(
+          `INSERT INTO reddit_subreddit_blacklist (name)
+           VALUES ($1)
+           ON CONFLICT (name) DO NOTHING`,
+          [name]
+        );
+        res.json({ ok: true, name });
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.error(
+          "POST /api/reddit/subreddit-blacklist error",
+          err
+        );
+        res
+          .status(500)
+          .json({ message: "Failed to insert subreddit blacklist" });
+      }
+    }
+  );
+
   return router;
 }

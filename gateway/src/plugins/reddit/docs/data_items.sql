@@ -7,6 +7,7 @@ CREATE TABLE IF NOT EXISTS "public"."data_items" (
   "rule_id" uuid NOT NULL,
   "unique_key" varchar(500) NOT NULL,
   "source" varchar(100) NOT NULL,
+  "channel" text,
   "title" text,
   "content" text,
   "url" text,
@@ -28,10 +29,12 @@ CREATE TABLE IF NOT EXISTS "public"."data_items" (
 
 COMMENT ON COLUMN "public"."data_items"."unique_key" IS '信息源主键，如 Reddit post id、推文 id';
 COMMENT ON COLUMN "public"."data_items"."source" IS '插件源/信息源，如 reddit、twitter';
+COMMENT ON COLUMN "public"."data_items"."channel" IS '数据源中的分类，如 subreddit、topic 等';
 COMMENT ON COLUMN "public"."data_items"."tracking" IS '用户跟踪状态';
 COMMENT ON COLUMN "public"."data_items"."read" IS '未读状态，用户查看后更新';
 COMMENT ON COLUMN "public"."data_items"."extra" IS '信息源扩展字段，如 comment_count、like_count、subreddit 等';
 
 -- 若 data_items 已存在，可执行下面语句补字段
 ALTER TABLE "public"."data_items"
-  ADD COLUMN IF NOT EXISTS "hot_words" text;
+  ADD COLUMN IF NOT EXISTS "hot_words" text,
+  ADD COLUMN IF NOT EXISTS "channel" text;

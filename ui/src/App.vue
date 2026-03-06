@@ -87,6 +87,8 @@ function onMenuClick(info: { key: string }) {
 <style scoped>
 .app-layout {
   min-height: 100vh;
+  height: 100vh;
+  overflow: hidden;
 }
 
 .app-sider {
@@ -125,6 +127,8 @@ function onMenuClick(info: { key: string }) {
   background: #fff;
   border-radius: 8px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  height: calc(100vh - 64px - 32px);
+  overflow: auto;
 }
 
 .lang-switch {

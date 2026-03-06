@@ -91,7 +91,7 @@
           <a-space>
             <a-button
               type="link"
-              size="small"
+              size="middle"
               :disabled="!record.url"
               @click.stop="openPage(record)"
             >
@@ -99,7 +99,7 @@
             </a-button>
             <a-button
               type="link"
-              size="small"
+              size="middle"
               :disabled="record.read"
               @click.stop="ignoreItem(record)"
             >
@@ -107,10 +107,18 @@
             </a-button>
             <a-button
               type="link"
-              size="small"
+              size="middle"
               @click.stop="toggleTracking(record)"
             >
               {{ record.tracking ? "取消跟踪" : "跟踪" }}
+            </a-button>
+            <a-button
+              v-if="record.source === 'reddit' && record.channel"
+              type="link"
+              size="middle"
+              @click.stop="blacklistChannelAndMarkRead(record)"
+            >
+              加入黑名单+已读
             </a-button>
           </a-space>
         </template>
@@ -129,7 +137,7 @@
       <a-row :gutter="[12, 12]">
         <a-col v-for="item in dataSource" :key="item.id" :xs="24" :sm="12" :lg="8">
           <a-card
-            class="data-card"
+            :class="['data-card', { 'data-card--read': item.read }]"
             size="small"
             hoverable
             @click="openCard(item)"
@@ -152,6 +160,7 @@
                 {{ item.read ? "已阅" : "未阅" }}
               </a-tag>
               <span class="muted">{{ item.source }}</span>
+              <span v-if="item.channel" class="muted">频道：{{ item.channel }}</span>
               <span class="muted">抓取：{{ item.crawlTime }}</span>
               <span v-if="item.publishTime" class="muted">
                 发布：{{ item.publishTime }}
@@ -171,11 +180,39 @@
             </div>
 
             <template #actions>
-              <span @click.stop="openPage(item)">打开</span>
-              <span @click.stop="ignoreItem(item)">忽略</span>
-              <span @click.stop="toggleTracking(item)">
+              <a-button
+                class="data-card-action"
+                type="text"
+                block
+                @click.stop="openPage(item)"
+              >
+                打开
+              </a-button>
+              <a-button
+                class="data-card-action"
+                type="text"
+                block
+                @click.stop="ignoreItem(item)"
+              >
+                忽略
+              </a-button>
+              <a-button
+                class="data-card-action"
+                type="text"
+                block
+                @click.stop="toggleTracking(item)"
+              >
                 {{ item.tracking ? "取消跟踪" : "跟踪" }}
-              </span>
+              </a-button>
+              <a-button
+                v-if="item.source === 'reddit' && item.channel"
+                class="data-card-action"
+                type="text"
+                block
+                @click.stop="blacklistChannelAndMarkRead(item)"
+              >
+                加入黑名单+已读
+              </a-button>
             </template>
           </a-card>
         </a-col>
@@ -217,6 +254,7 @@ interface DataItem {
   id: string;
   ruleId: string;
   source: string;
+  channel?: string;
   title: string;
   content: string;
   url?: string;
@@ -246,6 +284,7 @@ const filters = ref<{
 const columns = [
   { title: "规则 ID", dataIndex: "ruleId", key: "ruleId" },
   { title: "数据源", dataIndex: "source", key: "source" },
+  { title: "Channel", dataIndex: "channel", key: "channel" },
   { title: "标题", dataIndex: "title", key: "title", ellipsis: true },
   { title: "描述", dataIndex: "summary", key: "summary", ellipsis: true },
   { title: "热词", dataIndex: "hotWords", key: "hotWords", ellipsis: true },
@@ -314,6 +353,7 @@ async function search(resetPage = false) {
     id: r.id,
     ruleId: r.ruleId,
     source: r.source,
+    channel: r.channel,
     title: r.title,
     content: r.content,
     url: r.url,
@@ -355,6 +395,27 @@ async function toggleTracking(record: DataItem) {
   const next = !record.tracking;
   await setTracking(record.id, next);
   record.tracking = next;
+  if (next && !record.read) {
+    record.read = true;
+  }
+}
+
+async function blacklistChannelAndMarkRead(record: DataItem) {
+  if (!record.channel) return;
+  await http.post("/data/channel/blacklist", {
+    source: record.source,
+    channel: record.channel
+  });
+  // 前端本地同步：将当前列表中相同 source+channel 的项全部标记为已读
+  for (const item of dataSource.value) {
+    if (
+      item.source === record.source &&
+      item.channel === record.channel &&
+      !item.read
+    ) {
+      item.read = true;
+    }
+  }
 }
 
 function openCard(record: DataItem) {
@@ -459,6 +520,36 @@ onMounted(() => {
 .data-card__keywords {
   margin-top: 8px;
   font-size: 12px;
+}
+
+.data-card--read {
+  background-color: #f5f5f5;
+}
+
+.data-card :deep(.ant-card-actions) {
+  display: flex;
+}
+
+.data-card :deep(.ant-card-actions > li) {
+  flex: 1;
+  margin: 0;
+}
+
+.data-card :deep(.ant-card-actions > li > .data-card-action) {
+  display: block;
+  width: 100%;
+  padding: 10px 0;
+  text-align: center;
+  cursor: pointer;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+.data-card :deep(.ant-card-actions > li + li > .data-card-action) {
+  border-left: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.data-card :deep(.ant-card-actions > li > .data-card-action:hover) {
+  background-color: rgba(0, 0, 0, 0.04);
 }
 </style>
 
