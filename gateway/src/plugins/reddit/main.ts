@@ -357,9 +357,11 @@ export async function run(options: PluginRunOptions): Promise<PluginRunResult> {
     );
 
     const passedList = validateResults.filter((r) => r.passed);
+    const failedList = validateResults.filter((r) => !r.passed);
     writeLog("llm_done", {
       total: validateResults.length,
-      passed: passedList.length
+      passed: passedList.length,
+      failed: failedList.length
     });
 
     let savedCount = 0;
@@ -406,6 +408,51 @@ export async function run(options: PluginRunOptions): Promise<PluginRunResult> {
       failed: saveFailedCount
     });
 
+    // 对于关键词命中但 LLM 未通过的数据，写入 data_items_abandon 表
+    let abandonSavedCount = 0;
+    let abandonSaveFailedCount = 0;
+    writeLog("save_abandon_data_start", { toSave: failedList.length });
+    for (const { post, rule, summary, hotword, matchedKeywords: mk } of failedList) {
+      const record: DataRecordBody = {
+        ruleId: rule.id,
+        uniqueKey: post.id,
+        source: "reddit",
+        // 将 subreddit 写入通用 channel 字段
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        ...(post.subreddit ? ({ channel: post.subreddit } as any) : {}),
+        title: title(post),
+        content: content(post),
+        url: buildRedditUrl(post),
+        keywords: mk,
+        tracking: false,
+        crawlTime: new Date().toISOString(),
+        publishTime: publishTimeFromUtc(post.created_utc ?? null),
+        summary: summary ?? undefined,
+        hotWords: hotword ?? undefined,
+        read: false,
+        heatScore: 0,
+        extra: {
+          subreddit: post.subreddit ?? undefined,
+          source: post.source ?? undefined
+        }
+      };
+      try {
+        await client.post("/api/data/abandon", record);
+        abandonSavedCount++;
+      } catch (err) {
+        abandonSaveFailedCount++;
+        writeLog("save_abandon_data_error", {
+          uniqueKey: record.uniqueKey,
+          ruleId: record.ruleId,
+          error: axiosErrorToDetail(err)
+        });
+      }
+    }
+    writeLog("save_abandon_data_done", {
+      saved: abandonSavedCount,
+      failed: abandonSaveFailedCount
+    });
+
     for (const { post } of candidateList) toMarkProcessed.add(post.id);
     if (toMarkProcessed.size > 0) {
       try {
@@ -427,7 +474,7 @@ export async function run(options: PluginRunOptions): Promise<PluginRunResult> {
       saveFailed: saveFailedCount
     });
     return {
-      success: saveFailedCount === 0,
+      success: saveFailedCount === 0 && abandonSaveFailedCount === 0,
       totalCount: posts.length,
       matchedCount: savedCount
     };

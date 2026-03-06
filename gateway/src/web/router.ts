@@ -5,6 +5,7 @@ import type { PluginRegistry } from "../plugin-registry/types";
 import { createRulesController } from "./rules-controller";
 import { createPluginsController } from "./plugins-controller";
 import { createDataController } from "./data-controller";
+import { createDataAbandonController } from "./data-abandon-controller";
 import { createAnalysisController } from "./analysis-controller";
 import { createStatusController } from "./status-controller";
 
@@ -20,6 +21,7 @@ export function createWebRouter(deps: Deps): Router {
   router.use("/rules", createRulesController(deps));
   router.use("/plugins", createPluginsController(deps));
   router.use("/data", createDataController(deps));
+  router.use("/data-abandon", createDataAbandonController(deps));
   router.use("/analysis", createAnalysisController(deps));
   router.use("/status", createStatusController(deps));
 

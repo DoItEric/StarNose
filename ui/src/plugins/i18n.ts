@@ -8,7 +8,8 @@ const messages = {
       data: "数据",
       tracking: "跟踪",
       analysis: "分析",
-      settings: "系统设置"
+      settings: "系统设置",
+      data_abandon: "数据废弃"
     },
     datasource: {
       title: "数据源插件",
@@ -26,7 +27,8 @@ const messages = {
       data: "Data",
       tracking: "Tracking",
       analysis: "Analysis",
-      settings: "Settings"
+      settings: "Settings",
+      data_abandon: "数据废弃"
     },
     datasource: {
       title: "Data Source Plugins",
