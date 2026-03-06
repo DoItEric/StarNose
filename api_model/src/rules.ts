@@ -7,6 +7,8 @@ export interface Rule {
   lastRunAt?: string; // ISO UTC
   remark?: string;
   extra?: Record<string, unknown>;
+  /** LLM 筛选时使用的提示词文件名（不含扩展名），位于 prompts 目录 */
+  promptFile?: string;
 }
 
 export interface CreateRuleRequest {

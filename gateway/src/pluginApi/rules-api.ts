@@ -20,8 +20,8 @@ export function createRulesApi({ pool }: Deps): Router {
       const params: unknown[] = [];
 
       if (query.plugin) {
-        // 目前规则尚未与插件做严格绑定，这里只是预留条件
-        void query.plugin;
+        params.push(`%,${String(query.plugin).trim()},%`);
+        conditions.push(`plugins LIKE $${params.length}`);
       }
 
       const whereClause =
@@ -36,10 +36,11 @@ export function createRulesApi({ pool }: Deps): Router {
            disabled,
            last_run_at AS "lastRunAt",
            remark,
-           extra
+           extra,
+           prompt_file AS "promptFile"
          FROM rules
          ${whereClause}
-         ORDER BY created_at DESC`,
+         ORDER BY created_at ASC`,
         params
       );
 

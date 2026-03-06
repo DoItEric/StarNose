@@ -6,6 +6,7 @@ import { createRulesApi } from "./rules-api";
 import { createTrackingApi } from "./tracking-api";
 import { createDataApi } from "./data-api";
 import { createValidateApi } from "./validate-api";
+import { createRedditApi } from "./reddit-api";
 
 interface Deps {
   pool: Pool;
@@ -20,6 +21,7 @@ export function createPluginApiRouter(deps: Deps): Router {
   router.use("/tracking", createTrackingApi(deps));
   router.use("/data", createDataApi(deps));
   router.use("/validate", createValidateApi(deps));
+  router.use("/reddit", createRedditApi(deps));
 
   return router;
 }

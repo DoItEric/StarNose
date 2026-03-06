@@ -6,6 +6,19 @@ export interface PluginMeta {
   description?: string;
 }
 
+/** 主程序调用插件时传入的参数（插件作为主程序一部分运行） */
+export interface PluginRunOptions {
+  gatewayUrl: string;
+  pluginKey: string;
+}
+
+/** 插件 run() 返回结果，供主程序写入 plugin_runs */
+export interface PluginRunResult {
+  success: boolean;
+  totalCount?: number;
+  matchedCount?: number;
+}
+
 export interface PluginScheduleConfig {
   pluginKey: string;
   cron: string;

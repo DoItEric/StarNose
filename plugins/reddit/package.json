@@ -1,5 +1,5 @@
 {
-  "name": "starnose-plugin-twitter-example",
+  "name": "starnose-plugin-reddit",
   "version": "0.1.0",
   "private": true,
   "main": "dist/main.js",

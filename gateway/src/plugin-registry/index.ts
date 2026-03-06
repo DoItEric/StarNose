@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import type { PluginRunOptions, PluginRunResult } from "starnose-api-model";
 import type { PluginInfo, PluginRegistry } from "./types";
 
 export function initPluginRegistry(
@@ -39,6 +40,24 @@ export function initPluginRegistry(
   return {
     listPlugins() {
       return plugins;
+    },
+    async runPlugin(
+      pluginKey: string,
+      options: PluginRunOptions
+    ): Promise<PluginRunResult> {
+      const plugin = plugins.find((p) => p.key === pluginKey);
+      if (!plugin) {
+        throw new Error(`Plugin not found: ${pluginKey}`);
+      }
+      const entryPath = path.resolve(pluginsDir, pluginKey, plugin.entry);
+      if (!fs.existsSync(entryPath)) {
+        throw new Error(`Plugin entry not found: ${entryPath}`);
+      }
+      const mod = require(entryPath) as { run?: (opts: PluginRunOptions) => Promise<PluginRunResult> };
+      if (typeof mod.run !== "function") {
+        throw new Error(`Plugin ${pluginKey} does not export run() (in-process run not supported)`);
+      }
+      return mod.run(options);
     }
   };
 }

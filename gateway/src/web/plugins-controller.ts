@@ -164,22 +164,49 @@ export function createPluginsController({ pool, pluginRegistry }: Deps): Router 
           pluginId = inserted.rows[0].id as string;
         }
 
-        // 这里先只记录一次“调用”日志，后续可扩展为真正 spawn 子进程
-        const run = await pool.query(
+        const gatewayUrl =
+          process.env.GATEWAY_URL ||
+          `http://127.0.0.1:${process.env.PORT || 3000}`;
+        const startedAt = new Date().toISOString();
+
+        const runPlugin = pluginRegistry.runPlugin;
+        if (!runPlugin) {
+          res.status(501).json({ message: "Plugin in-process run not available" });
+          return;
+        }
+        const result = await runPlugin(pluginKey, {
+          gatewayUrl,
+          pluginKey
+        });
+        const finishedAt = new Date().toISOString();
+
+        await pool.query(
           `INSERT INTO plugin_runs (
              plugin_id, started_at, finished_at, success, total_count, matched_count
-           ) VALUES (
-             $1, now(), now(), true, 0, 0
-           )
-           RETURNING started_at`,
-          [pluginId]
+           ) VALUES ($1, $2::timestamptz, $3::timestamptz, $4, $5, $6)`,
+          [
+            pluginId,
+            startedAt,
+            finishedAt,
+            result.success,
+            result.totalCount ?? 0,
+            result.matchedCount ?? 0
+          ]
         );
 
-        res.status(201).json({ lastRunAt: run.rows[0].started_at });
+        res.status(201).json({
+          lastRunAt: startedAt,
+          success: result.success,
+          totalCount: result.totalCount ?? 0,
+          matchedCount: result.matchedCount ?? 0
+        });
       } catch (err) {
         // eslint-disable-next-line no-console
         console.error("POST /web/plugins/:pluginKey/call error", err);
-        res.status(500).json({ message: "Failed to call plugin" });
+        res.status(500).json({
+          message:
+            err instanceof Error ? err.message : "Failed to call plugin"
+        });
       }
     }
   );
