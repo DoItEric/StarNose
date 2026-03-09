@@ -21,7 +21,7 @@
           </template>
           <p>{{ plugin.description }}</p>
           <p v-if="plugin.lastRunAt" style="font-size: 12px; color: #999">
-            最后调用时间：{{ plugin.lastRunAt }}
+            最后调用时间：{{ formatUtcToBeijing(plugin.lastRunAt) }}
           </p>
           <template #actions>
             <a @click="openSetting(plugin)">
@@ -77,6 +77,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from "vue";
 import { http } from "@/api/http";
+import { formatUtcToBeijing } from "@/utils/time";
 
 interface Plugin {
   id?: string;

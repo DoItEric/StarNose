@@ -41,6 +41,7 @@ export function createRulesController({ pool, logDir }: Deps): Router {
            last_run_at AS "lastRunAt",
            remark,
            extra,
+           content_length AS "contentLength",
            created_at AS "createdAt",
            updated_at AS "updatedAt"
          FROM rules
@@ -76,6 +77,7 @@ export function createRulesController({ pool, logDir }: Deps): Router {
            last_run_at AS "lastRunAt",
            remark,
            extra,
+           content_length AS "contentLength",
            created_at AS "createdAt",
            updated_at AS "updatedAt"
          FROM rules
@@ -122,9 +124,10 @@ export function createRulesController({ pool, logDir }: Deps): Router {
                  negative_keywords = $5,
                  plugins = $6,
                  prompt_file = $7,
-                 disabled = COALESCE($8, disabled),
+                 content_length = $8,
+                 disabled = COALESCE($9, disabled),
                  updated_at = now()
-           WHERE id = $9`,
+           WHERE id = $10`,
           [
             body.name,
             body.keywordDescription ?? null,
@@ -133,6 +136,7 @@ export function createRulesController({ pool, logDir }: Deps): Router {
             body.negativeKeywords ?? null,
             body.plugins ?? null,
             body.promptFile ?? null,
+            body.contentLength ?? null,
             body.disabled ?? null,
             body.id
           ]
@@ -140,8 +144,8 @@ export function createRulesController({ pool, logDir }: Deps): Router {
         res.status(200).json({ id: body.id });
       } else {
         const insertResult = await pool.query(
-          `INSERT INTO rules (name, keyword_description, description, keywords, negative_keywords, plugins, prompt_file, disabled, remark)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, COALESCE($8, false), NULL)
+          `INSERT INTO rules (name, keyword_description, description, keywords, negative_keywords, plugins, prompt_file, content_length, disabled, remark)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, COALESCE($9, false), NULL)
            RETURNING id`,
           [
             body.name,
@@ -151,6 +155,7 @@ export function createRulesController({ pool, logDir }: Deps): Router {
             body.negativeKeywords ?? null,
             body.plugins ?? null,
             body.promptFile ?? null,
+            body.contentLength ?? null,
             body.disabled ?? null
           ]
         );

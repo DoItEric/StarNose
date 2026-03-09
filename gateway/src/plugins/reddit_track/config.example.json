@@ -1,0 +1,4 @@
+{
+  "requestIntervalMs": 2500,
+  "concurrency": 3
+}

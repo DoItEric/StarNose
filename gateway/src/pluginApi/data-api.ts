@@ -22,6 +22,8 @@ export function createDataApi({ pool }: Deps): Router {
           : body.keywords
           ? [String(body.keywords)]
           : [];
+      const readVal =
+        body.read === 1 ? 1 : body.read === -1 ? -1 : 0;
       const result = await pool.query(
         `INSERT INTO data_items (
            rule_id,
@@ -48,7 +50,7 @@ export function createDataApi({ pool }: Deps): Router {
            $11,
            $12,
            $13,
-           COALESCE($14,false),
+           $14,
            $15,
            COALESCE($16,0),
            COALESCE($17,'{}'::jsonb)
@@ -85,7 +87,7 @@ export function createDataApi({ pool }: Deps): Router {
           body.publishTime ?? null, // $11
           body.summary ?? null, // $12
           body.hotWords ?? null, // $13
-          body.read ?? false, // $14
+          readVal, // $14
           body.remark ?? null, // $15
           body.heatScore ?? 0, // $16
           body.extra ?? {} // $17
@@ -110,6 +112,8 @@ export function createDataApi({ pool }: Deps): Router {
           : body.keywords
           ? [String(body.keywords)]
           : [];
+      const readVal =
+         body.read === 1 ? 1 : body.read === -1 ? -1 : 0;
       const result = await pool.query(
         `INSERT INTO data_items_abandon (
            rule_id,
@@ -136,7 +140,7 @@ export function createDataApi({ pool }: Deps): Router {
            $11,
            $12,
            $13,
-           COALESCE($14,false),
+           $14,
            $15,
            COALESCE($16,0),
            COALESCE($17,'{}'::jsonb)
@@ -171,7 +175,7 @@ export function createDataApi({ pool }: Deps): Router {
           body.publishTime ?? null, // $11
           body.summary ?? null, // $12
           body.hotWords ?? null, // $13
-          body.read ?? false, // $14
+          readVal, // $14
           body.remark ?? null, // $15
           body.heatScore ?? 0, // $16
           body.extra ?? {} // $17
@@ -183,6 +187,60 @@ export function createDataApi({ pool }: Deps): Router {
       // eslint-disable-next-line no-console
       console.error("POST /api/data/abandon error", err);
       res.status(500).json({ message: "Failed to store abandon data" });
+    }
+  });
+
+  /** 供 track 插件拉取待跟踪数据：抓取时间>3天、距上次 track>3天、track 次数<3 */
+  router.get("/for-track", async (req: Request, res: Response) => {
+    const source = (req.query.source as string)?.trim() || null;
+    try {
+      const threeDaysAgo = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString();
+      const conditions = [
+        "crawl_time < $1",
+        "(last_track_at IS NULL OR last_track_at < $1)",
+        "track_count < 3"
+      ];
+      const params: unknown[] = [threeDaysAgo];
+      if (source) {
+        params.push(source);
+        conditions.push(`source = $${params.length}`);
+      }
+      const whereClause = "WHERE " + conditions.join(" AND ");
+      const result = await pool.query(
+        `SELECT id, unique_key AS "uniqueKey", source, channel
+         FROM data_items
+         ${whereClause}
+         ORDER BY last_track_at ASC NULLS FIRST
+         LIMIT 500`,
+        params
+      );
+      res.json({ items: result.rows });
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error("GET /api/data/for-track error", err);
+      res.status(500).json({ message: "Failed to load items for track" });
+    }
+  });
+
+  /** 更新单条数据的 track 结果（供 track 插件调用） */
+  router.patch("/:id/track-update", async (req: Request, res: Response) => {
+    const id = req.params.id;
+    const body = req.body as { trackData?: Record<string, unknown> };
+    try {
+      await pool.query(
+        `UPDATE data_items
+           SET track_data = COALESCE($1, track_data),
+               last_track_at = now(),
+               track_count = track_count + 1,
+               updated_at = now()
+         WHERE id = $2`,
+        [body.trackData ? JSON.stringify(body.trackData) : null, id]
+      );
+      res.status(204).end();
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error("PATCH /api/data/:id/track-update error", err);
+      res.status(500).json({ message: "Failed to update track" });
     }
   });
 

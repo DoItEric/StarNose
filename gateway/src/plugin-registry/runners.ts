@@ -1,9 +1,11 @@
 import type { PluginRunOptions, PluginRunResult } from "../api-model";
 import { run as redditRun } from "../plugins/reddit/main";
+import { run as redditTrackRun } from "../plugins/reddit_track/main";
 
 /** 插件 key 与 run 函数的硬编码映射，直接引用并调用，不依赖路径解析 */
 const RUNNERS: Record<string, (opts: PluginRunOptions) => Promise<PluginRunResult>> = {
-  reddit: redditRun
+  reddit: redditRun,
+  reddit_track: redditTrackRun
 };
 
 export function getPluginRunner(pluginKey: string): ((opts: PluginRunOptions) => Promise<PluginRunResult>) | undefined {

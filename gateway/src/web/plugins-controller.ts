@@ -2,11 +2,7 @@ import type { Router, Request, Response } from "express";
 import express from "express";
 import type { Pool } from "pg";
 import type { PluginRegistry } from "../plugin-registry/types";
-import type {
-  PluginHistoryItem,
-  PluginScheduleConfig
-} from "../api-model";
-import { isPluginEnabled, setPluginEnabled } from "../plugin-registry/state";
+import type { PluginHistoryItem, PluginScheduleConfig } from "../api-model";
 
 interface Deps {
   pool: Pool;
@@ -22,6 +18,7 @@ export function createPluginsController({ pool, pluginRegistry }: Deps): Router 
       const keys = plugins.map((p) => p.key);
 
       let lastRunMap: Record<string, string> = {};
+      let enabledMap: Record<string, boolean> = {};
       if (keys.length > 0) {
         const dbResult = await pool.query(
           `SELECT p.key, max(pr.started_at) AS last_started_at
@@ -38,11 +35,26 @@ export function createPluginsController({ pool, pluginRegistry }: Deps): Router 
           },
           {} as Record<string, string>
         );
+
+        const scheduleResult = await pool.query(
+          `SELECT p.key, ps.enabled
+             FROM plugins p
+             JOIN plugin_schedules ps ON ps.plugin_id = p.id
+            WHERE p.key = ANY($1::text[])`,
+          [keys]
+        );
+        enabledMap = scheduleResult.rows.reduce(
+          (acc, row) => {
+            acc[row.key as string] = Boolean(row.enabled);
+            return acc;
+          },
+          {} as Record<string, boolean>
+        );
       }
 
       const items = plugins.map((p) => ({
         ...p,
-        enabled: isPluginEnabled(p.key),
+        enabled: enabledMap[p.key] ?? false,
         lastRunAt: lastRunMap[p.key] ?? null
       }));
 
@@ -224,7 +236,25 @@ export function createPluginsController({ pool, pluginRegistry }: Deps): Router 
           res.status(404).json({ message: "Plugin not found" });
           return;
         }
-        setPluginEnabled(pluginKey, enabled);
+
+        // 使用数据库中的 plugin_schedules.enabled 作为唯一启用配置来源
+        const updateResult = await pool.query(
+          `UPDATE plugin_schedules ps
+              SET enabled = $1,
+                  updated_at = now()
+             FROM plugins p
+            WHERE ps.plugin_id = p.id
+              AND p.key = $2`,
+          [enabled, pluginKey]
+        );
+
+        // 如果尚未为该插件创建调度配置，则不自动插入，只是静默返回
+        // 需要先通过 /web/plugins/:pluginKey/schedule 配置 cron 才有调度记录
+        if (updateResult.rowCount === 0) {
+          res.status(204).end();
+          return;
+        }
+
         res.status(204).end();
       } catch (err) {
         // eslint-disable-next-line no-console

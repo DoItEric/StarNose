@@ -1,67 +1,81 @@
 <template>
   <div>
-    <div class="page-header">
-      <div class="page-header__row">
-        <h2>丢弃数据</h2>
-        <a-space>
-          <span class="toolbar-label">每页</span>
+    <div class="page-toolbar-sticky">
+      <div class="page-header">
+        <div class="page-header__row">
+          <h2>丢弃数据</h2>
+          <a-space>
+            <span class="toolbar-label">每页</span>
+            <a-select
+              v-model:value="pagination.pageSize"
+              style="width: 110px"
+              @change="onPageSizeChange"
+            >
+              <a-select-option :value="50">50</a-select-option>
+              <a-select-option :value="100">100</a-select-option>
+              <a-select-option :value="200">200</a-select-option>
+              <a-select-option :value="500">500</a-select-option>
+            </a-select>
+            <a-segmented
+              v-model:value="viewMode"
+              :options="[
+                { label: '列表', value: 'table' },
+                { label: '卡片', value: 'card' }
+              ]"
+            />
+          </a-space>
+        </div>
+      </div>
+
+      <a-form layout="inline" class="filter-form">
+        <a-form-item label="抓取时间">
+          <a-range-picker v-model:value="filters.crawlRange" show-time />
+        </a-form-item>
+        <a-form-item label="发布时间">
+          <a-range-picker v-model:value="filters.publishRange" show-time />
+        </a-form-item>
+        <a-form-item label="数据源">
           <a-select
-            v-model:value="pagination.pageSize"
-            style="width: 110px"
-            @change="onPageSizeChange"
+            v-model:value="filters.plugins"
+            mode="multiple"
+            style="min-width: 160px"
           >
-            <a-select-option :value="50">50</a-select-option>
-            <a-select-option :value="100">100</a-select-option>
-            <a-select-option :value="200">200</a-select-option>
-            <a-select-option :value="500">500</a-select-option>
+            <a-select-option value="twitter">Twitter</a-select-option>
+            <a-select-option value="rss">RSS</a-select-option>
+            <a-select-option value="reddit">Reddit</a-select-option>
           </a-select>
-          <a-segmented
-            v-model:value="viewMode"
-            :options="[
-              { label: '列表', value: 'table' },
-              { label: '卡片', value: 'card' }
-            ]"
+        </a-form-item>
+        <a-form-item label="查阅状态">
+          <a-select v-model:value="filters.readStatus" style="width: 120px">
+            <a-select-option value="all">全部</a-select-option>
+            <a-select-option value="read">已阅</a-select-option>
+            <a-select-option value="unread">未阅</a-select-option>
+            <a-select-option value="ignored">忽略</a-select-option>
+          </a-select>
+        </a-form-item>
+        <a-form-item label="关键字">
+          <a-input
+            v-model:value="filters.keyword"
+            placeholder="标题/正文关键字"
+            style="width: 220px"
           />
-        </a-space>
+        </a-form-item>
+        <a-form-item>
+          <a-button type="primary" @click="() => search(true)">查询</a-button>
+        </a-form-item>
+      </a-form>
+
+      <div v-if="ruleTabs.length" class="rule-tabs">
+        <a-tag
+          v-for="tab in ruleTabs"
+          :key="tab.ruleId || 'all'"
+          :class="['rule-tab', { 'rule-tab--active': activeRuleId === tab.ruleId }]"
+          @click="onRuleTabClick(tab.ruleId)"
+        >
+          {{ tab.name }}{{ tab.unreadCount > 0 ? `(${tab.unreadCount})` : "" }}
+        </a-tag>
       </div>
     </div>
-
-    <a-form layout="inline" class="filter-form">
-      <a-form-item label="抓取时间">
-        <a-range-picker v-model:value="filters.crawlRange" show-time />
-      </a-form-item>
-      <a-form-item label="发布时间">
-        <a-range-picker v-model:value="filters.publishRange" show-time />
-      </a-form-item>
-      <a-form-item label="数据源">
-        <a-select
-          v-model:value="filters.plugins"
-          mode="multiple"
-          style="min-width: 160px"
-        >
-          <a-select-option value="twitter">Twitter</a-select-option>
-          <a-select-option value="rss">RSS</a-select-option>
-          <a-select-option value="reddit">Reddit</a-select-option>
-        </a-select>
-      </a-form-item>
-      <a-form-item label="查阅状态">
-        <a-select v-model:value="filters.readStatus" style="width: 120px">
-          <a-select-option value="all">全部</a-select-option>
-          <a-select-option value="read">已阅</a-select-option>
-          <a-select-option value="unread">未阅</a-select-option>
-        </a-select>
-      </a-form-item>
-      <a-form-item label="关键字">
-        <a-input
-          v-model:value="filters.keyword"
-          placeholder="标题/正文关键字"
-          style="width: 220px"
-        />
-      </a-form-item>
-      <a-form-item>
-        <a-button type="primary" @click="() => search(true)">查询</a-button>
-      </a-form-item>
-    </a-form>
 
     <a-table
       v-if="viewMode === 'table'"
@@ -100,7 +114,15 @@
             <a-button
               type="link"
               size="middle"
-              :disabled="record.read"
+              :disabled="record.read === 1 || record.read === -1"
+              @click.stop="markAsRead(record)"
+            >
+              已读
+            </a-button>
+            <a-button
+              type="link"
+              size="middle"
+              :disabled="record.read === 1 || record.read === -1"
               @click.stop="ignoreItem(record)"
             >
               忽略
@@ -123,9 +145,12 @@
           </a-space>
         </template>
         <template v-else-if="column.key === 'readStatus'">
-          <a-tag :color="record.read ? 'green' : 'blue'">
-            {{ record.read ? "已阅" : "未阅" }}
+          <a-tag :color="readStatusColor(record.read)">
+            {{ readStatusText(record.read) }}
           </a-tag>
+        </template>
+        <template v-else-if="column.key === 'trackData'">
+          {{ formatTrackData(record) }}
         </template>
         <template v-else>
           {{ record[column.dataIndex] }}
@@ -137,7 +162,7 @@
       <a-row :gutter="[12, 12]">
         <a-col v-for="item in dataSource" :key="item.id" :xs="24" :sm="12" :lg="8">
           <a-card
-            :class="['data-card', { 'data-card--read': item.read }]"
+            :class="['data-card', { 'data-card--read': item.read === 1 || item.read === -1 }]"
             size="small"
             hoverable
             @click="openCard(item)"
@@ -156,14 +181,15 @@
             </template>
 
             <div class="data-card__meta">
-              <a-tag :color="item.read ? 'green' : 'blue'">
-                {{ item.read ? "已阅" : "未阅" }}
+              <a-tag :color="readStatusColor(item.read)">
+                {{ readStatusText(item.read) }}
               </a-tag>
               <span class="muted">{{ item.source }}</span>
+              <span class="muted">规则：{{ ruleNameMap[item.ruleId] ?? item.ruleId }}</span>
               <span v-if="item.channel" class="muted">频道：{{ item.channel }}</span>
-              <span class="muted">抓取：{{ item.crawlTime }}</span>
+              <span class="muted">抓取：{{ formatUtcToBeijing(item.crawlTime) }}</span>
               <span v-if="item.publishTime" class="muted">
-                发布：{{ item.publishTime }}
+                发布：{{ formatUtcToBeijing(item.publishTime) }}
               </span>
             </div>
 
@@ -179,6 +205,10 @@
               <span class="muted">关键字：</span>{{ item.keywords.join(", ") }}
             </div>
 
+            <div v-if="formatTrackData(item) !== '—'" class="data-card__track">
+              <span class="muted">跟踪数据：</span>{{ formatTrackData(item) }}
+            </div>
+
             <template #actions>
               <a-button
                 class="data-card-action"
@@ -192,6 +222,16 @@
                 class="data-card-action"
                 type="text"
                 block
+                :disabled="item.read === 1 || item.read === -1"
+                @click.stop="markAsRead(item)"
+              >
+                已读
+              </a-button>
+              <a-button
+                class="data-card-action"
+                type="text"
+                block
+                :disabled="item.read === 1 || item.read === -1"
                 @click.stop="ignoreItem(item)"
               >
                 忽略
@@ -211,7 +251,7 @@
                 block
                 @click.stop="blacklistChannelAndMarkRead(item)"
               >
-                加入黑名单+已读
+                黑名单
               </a-button>
             </template>
           </a-card>
@@ -249,6 +289,7 @@
 import { computed, onMounted, ref, watch } from "vue";
 import type { Dayjs } from "dayjs";
 import { http } from "@/api/http";
+import { formatUtcToBeijing } from "@/utils/time";
 
 interface DataItem {
   id: string;
@@ -264,14 +305,21 @@ interface DataItem {
   publishTime?: string;
   summary?: string;
   hotWords?: string;
-  read: boolean;
+  read: number;
+  trackData?: Record<string, unknown>;
+}
+
+interface RuleTab {
+  ruleId: string | null;
+  name: string;
+  unreadCount: number;
 }
 
 const filters = ref<{
   crawlRange: [Dayjs, Dayjs] | null;
   publishRange: [Dayjs, Dayjs] | null;
   plugins: string[];
-  readStatus: "all" | "read" | "unread";
+  readStatus: "all" | "read" | "unread" | "ignored";
   keyword: string;
 }>({
   crawlRange: null,
@@ -297,10 +345,15 @@ const columns = [
   { title: "抓取时间", dataIndex: "crawlTime", key: "crawlTime" },
   { title: "发布时间", dataIndex: "publishTime", key: "publishTime" },
   { title: "查阅状态", dataIndex: "readStatus", key: "readStatus" },
+  { title: "跟踪数据", dataIndex: "trackData", key: "trackData", width: 100 },
   { title: "操作", dataIndex: "track", key: "track" }
 ];
 
 const dataSource = ref<DataItem[]>([]);
+
+const ruleTabs = ref<RuleTab[]>([]);
+const activeRuleId = ref<string | null>(null);
+const ruleNameMap = ref<Record<string, string>>({});
 
 const viewMode = ref<"table" | "card">("card");
 const pagination = ref<{ page: number; pageSize: number; total: number }>({
@@ -342,6 +395,9 @@ async function search(resetPage = false) {
   if (filters.value.keyword) {
     params.keyword = filters.value.keyword;
   }
+  if (activeRuleId.value) {
+    params.ruleId = activeRuleId.value;
+  }
 
   params.page = pagination.value.page;
   params.pageSize = pagination.value.pageSize;
@@ -363,12 +419,63 @@ async function search(resetPage = false) {
     publishTime: r.publishTime,
     summary: r.summary,
     hotWords: r.hotWords,
-    read: r.read
+    read: typeof r.read === "number" ? r.read : r.read ? 1 : 0,
+    trackData: r.trackData
   }));
   pagination.value.total = Number(resp.data.total ?? 0);
+
+  const stats = (resp.data.ruleUnreadStats ?? []) as { ruleId: string; unreadCount: number }[];
+  const tabs: RuleTab[] = [];
+  let totalUnread = 0;
+  for (const s of stats) {
+    const unread = Number(s.unreadCount ?? 0);
+    totalUnread += unread;
+    const name = ruleNameMap.value[s.ruleId] ?? s.ruleId;
+    tabs.push({
+      ruleId: s.ruleId,
+      name,
+      unreadCount: unread
+    });
+  }
+  tabs.sort((a, b) => b.unreadCount - a.unreadCount);
+  ruleTabs.value = [
+    {
+      ruleId: null,
+      name: "全部",
+      unreadCount: totalUnread
+    },
+    ...tabs
+  ];
 }
 
-async function markRead(id: string, read: boolean) {
+function onRuleTabClick(ruleId: string | null) {
+  activeRuleId.value = ruleId;
+  pagination.value.page = 1;
+  void search(false);
+}
+
+function readStatusText(read: number): string {
+  if (read === -1) return "忽略";
+  if (read === 1) return "已阅";
+  return "未阅";
+}
+function readStatusColor(read: number): string {
+  if (read === -1) return "default";
+  if (read === 1) return "green";
+  return "blue";
+}
+function formatTrackData(record: DataItem): string {
+  const d = record.trackData;
+  if (!d || typeof d !== "object") return "—";
+  if (record.source === "reddit") {
+    const ups = (d as any).ups;
+    const num = (d as any).num_comments;
+    if (ups != null || num != null) return `↑ ${ups ?? "—"} · 💬 ${num ?? "—"}`;
+  }
+  return Object.keys(d).length ? JSON.stringify(d) : "—";
+}
+
+async function markRead(id: string, read: boolean | number) {
   await http.post("/data-abandon/read", { id, read });
 }
 
@@ -379,24 +486,30 @@ async function setTracking(id: string, tracking: boolean) {
 async function openPage(record: DataItem) {
   if (!record.url) return;
   window.open(record.url, "_blank", "noopener,noreferrer");
-  if (!record.read) {
-    await markRead(record.id, true);
-    record.read = true;
+  if (record.read !== 1) {
+    await markRead(record.id, 1);
+    record.read = 1;
   }
 }
 
 async function ignoreItem(record: DataItem) {
-  if (record.read) return;
-  await markRead(record.id, true);
-  record.read = true;
+  if (record.read === 1 || record.read === -1) return;
+  await markRead(record.id, -1);
+  record.read = -1;
+}
+
+async function markAsRead(record: DataItem) {
+  if (record.read === 1 || record.read === -1) return;
+  await markRead(record.id, 1);
+  record.read = 1;
 }
 
 async function toggleTracking(record: DataItem) {
   const next = !record.tracking;
   await setTracking(record.id, next);
   record.tracking = next;
-  if (next && !record.read) {
-    record.read = true;
+  if (next && record.read !== 1) {
+    record.read = 1;
   }
 }
 
@@ -452,15 +565,36 @@ watch(
 );
 
 onMounted(() => {
-  void search(true);
+  void (async () => {
+    try {
+      const resp = await http.get("/rules");
+      const items = (resp.data.items ?? []) as { id: string; name?: string }[];
+      const map: Record<string, string> = {};
+      for (const r of items) {
+        map[r.id] = r.name ?? r.id;
+      }
+      ruleNameMap.value = map;
+    } catch {
+      ruleNameMap.value = {};
+    }
+    await search(true);
+  })();
 });
 </script>
 
 <style scoped>
-.page-header {
-  margin-bottom: 16px;
+.page-toolbar-sticky {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background-color: #fff;
+  padding-top: 8px;
+  margin-bottom: 12px;
 }
 
+.page-header {
+  margin-bottom: 8px;
+}
 .page-header__row {
   display: flex;
   align-items: center;
@@ -473,8 +607,24 @@ onMounted(() => {
 }
 
 .filter-form {
-  margin-bottom: 16px;
+  margin-bottom: 8px;
   row-gap: 12px;
+}
+
+.rule-tabs {
+  margin-bottom: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.rule-tab {
+  cursor: pointer;
+}
+
+.rule-tab--active {
+  background-color: #1677ff;
+  color: #fff;
 }
 
 .card-view__pager {

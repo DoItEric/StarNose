@@ -3,28 +3,8 @@ import type {
   GenerateRuleKeywordsResponse,
   SupplementRuleKeywordsRequest
 } from "../api-model";
-import fs from "node:fs";
-import path from "node:path";
 import { callOpenRouter } from "../agents";
 import { loadPromptPair, fillTemplate } from "./prompts";
-
-function writeKeywordsLog(
-  logDir: string,
-  kind: "keywords_generate" | "keywords_supplement",
-  request: { description: string; keywords?: string[] },
-  result: string
-): void {
-  const date = new Date().toISOString().slice(0, 10);
-  const logPath = path.join(logDir, `llm-${date}.log`);
-  const line = JSON.stringify({
-    ts: new Date().toISOString(),
-    kind,
-    request,
-    result
-  });
-  fs.mkdirSync(logDir, { recursive: true });
-  fs.appendFileSync(logPath, line + "\n", "utf8");
-}
 
 export async function generateRuleKeywords(
   payload: CreateRuleRequest,
@@ -37,17 +17,18 @@ export async function generateRuleKeywords(
     description: desc
   });
 
-  const text = await callOpenRouter(
+  const res = await callOpenRouter(
     { system: pair.system, user },
-    "keywords"
+    "keywords",
+    {
+      logDir,
+      logContext: {
+        kind: "keywords_generate",
+        requestExtra: { description: desc }
+      }
+    }
   );
-
-  writeKeywordsLog(
-    logDir,
-    "keywords_generate",
-    { description: desc },
-    text
-  );
+  const text = res.text;
 
   const keywords = text
     .split(/[,\n]/)
@@ -69,17 +50,18 @@ export async function supplementRuleKeywords(
     keywords: payload.keywords.join("，")
   });
 
-  const text = await callOpenRouter(
+  const res = await callOpenRouter(
     { system: pair.system, user },
-    "keywords"
+    "keywords",
+    {
+      logDir,
+      logContext: {
+        kind: "keywords_supplement",
+        requestExtra: { description: desc, keywords: payload.keywords }
+      }
+    }
   );
-
-  writeKeywordsLog(
-    logDir,
-    "keywords_supplement",
-    { description: desc, keywords: payload.keywords },
-    text
-  );
+  const text = res.text;
 
   const keywords = text
     .split(/[,\n]/)

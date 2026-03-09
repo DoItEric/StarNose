@@ -1,0 +1,7 @@
+{
+  "key": "reddit_track",
+  "name": "Reddit Track",
+  "version": "0.1.0",
+  "description": "Periodically fetch and update Reddit post ups and comments count",
+  "entry": "main.js"
+}

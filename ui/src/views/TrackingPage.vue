@@ -49,6 +49,7 @@
           <a-select-option value="all">全部</a-select-option>
           <a-select-option value="read">已阅</a-select-option>
           <a-select-option value="unread">未阅</a-select-option>
+          <a-select-option value="ignored">忽略</a-select-option>
         </a-select>
       </a-form-item>
       <a-form-item label="关键字">
@@ -100,7 +101,7 @@
             <a-button
               type="link"
               size="small"
-              :disabled="record.read"
+              :disabled="record.read === 1 || record.read === -1"
               @click.stop="ignoreItem(record)"
             >
               忽略
@@ -111,9 +112,12 @@
           </a-space>
         </template>
         <template v-else-if="column.key === 'readStatus'">
-          <a-tag :color="record.read ? 'green' : 'blue'">
-            {{ record.read ? "已阅" : "未阅" }}
+          <a-tag :color="readStatusColor(record.read)">
+            {{ readStatusText(record.read) }}
           </a-tag>
+        </template>
+        <template v-else-if="column.key === 'trackData'">
+          {{ formatTrackData(record) }}
         </template>
         <template v-else>
           {{ record[column.dataIndex] }}
@@ -144,13 +148,13 @@
             </template>
 
             <div class="data-card__meta">
-              <a-tag :color="item.read ? 'green' : 'blue'">
-                {{ item.read ? "已阅" : "未阅" }}
+              <a-tag :color="readStatusColor(item.read)">
+                {{ readStatusText(item.read) }}
               </a-tag>
               <span class="muted">{{ item.source }}</span>
-              <span class="muted">抓取：{{ item.crawlTime }}</span>
+              <span class="muted">抓取：{{ formatUtcToBeijing(item.crawlTime) }}</span>
               <span v-if="item.publishTime" class="muted">
-                发布：{{ item.publishTime }}
+                发布：{{ formatUtcToBeijing(item.publishTime) }}
               </span>
             </div>
 
@@ -168,7 +172,10 @@
 
             <template #actions>
               <span @click.stop="openPage(item)">打开</span>
-              <span @click.stop="ignoreItem(item)">忽略</span>
+              <span
+                v-if="item.read !== 1 && item.read !== -1"
+                @click.stop="ignoreItem(item)"
+              >忽略</span>
               <span @click.stop="toggleTracking(item)">
                 {{ item.tracking ? "取消跟踪" : "跟踪" }}
               </span>
@@ -208,6 +215,7 @@
 import { computed, onMounted, ref, watch } from "vue";
 import type { Dayjs } from "dayjs";
 import { http } from "@/api/http";
+import { formatUtcToBeijing } from "@/utils/time";
 
 interface DataItem {
   id: string;
@@ -222,14 +230,15 @@ interface DataItem {
   publishTime?: string;
   summary?: string;
   hotWords?: string;
-  read: boolean;
+  read: number;
+  trackData?: Record<string, unknown>;
 }
 
 const filters = ref<{
   crawlRange: [Dayjs, Dayjs] | null;
   publishRange: [Dayjs, Dayjs] | null;
   plugins: string[];
-  readStatus: "all" | "read" | "unread";
+  readStatus: "all" | "read" | "unread" | "ignored";
   keyword: string;
 }>({
   crawlRange: null,
@@ -254,6 +263,7 @@ const columns = [
   { title: "抓取时间", dataIndex: "crawlTime", key: "crawlTime" },
   { title: "发布时间", dataIndex: "publishTime", key: "publishTime" },
   { title: "查阅状态", dataIndex: "readStatus", key: "readStatus" },
+  { title: "跟踪数据", dataIndex: "trackData", key: "trackData", width: 100 },
   { title: "操作", key: "track" }
 ];
 
@@ -319,12 +329,34 @@ async function search(resetPage = false) {
     publishTime: r.publishTime,
     summary: r.summary,
     hotWords: r.hotWords,
-    read: r.read
+    read: typeof r.read === "number" ? r.read : r.read ? 1 : 0,
+    trackData: r.trackData
   }));
   pagination.value.total = Number(resp.data.total ?? 0);
 }
 
-async function markRead(id: string, read: boolean) {
+function readStatusText(read: number): string {
+  if (read === -1) return "忽略";
+  if (read === 1) return "已阅";
+  return "未阅";
+}
+function readStatusColor(read: number): string {
+  if (read === -1) return "default";
+  if (read === 1) return "green";
+  return "blue";
+}
+function formatTrackData(record: DataItem): string {
+  const d = record.trackData;
+  if (!d || typeof d !== "object") return "—";
+  if (record.source === "reddit") {
+    const ups = (d as any).ups;
+    const num = (d as any).num_comments;
+    if (ups != null || num != null) return `↑ ${ups ?? "—"} · 💬 ${num ?? "—"}`;
+  }
+  return Object.keys(d).length ? JSON.stringify(d) : "—";
+}
+
+async function markRead(id: string, read: boolean | number) {
   await http.post("/data/read", { id, read });
 }
 
@@ -335,16 +367,16 @@ async function setTracking(id: string, tracking: boolean) {
 async function openPage(record: DataItem) {
   if (!record.url) return;
   window.open(record.url, "_blank", "noopener,noreferrer");
-  if (!record.read) {
-    await markRead(record.id, true);
-    record.read = true;
+  if (record.read !== 1) {
+    await markRead(record.id, 1);
+    record.read = 1;
   }
 }
 
 async function ignoreItem(record: DataItem) {
-  if (record.read) return;
-  await markRead(record.id, true);
-  record.read = true;
+  if (record.read === 1 || record.read === -1) return;
+  await markRead(record.id, -1);
+  record.read = -1;
 }
 
 async function toggleTracking(record: DataItem) {

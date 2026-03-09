@@ -205,6 +205,14 @@
             placeholder="prompt 文件名（不含扩展名），如 validate_content_zh"
           />
         </a-form-item>
+        <a-form-item label="内容最大长度（字符）">
+          <a-input-number
+            v-model:value="form.contentLength"
+            placeholder="不填则不限制，超过则不做 LLM 匹配"
+            :min="1"
+            style="width: 100%"
+          />
+        </a-form-item>
       </a-form>
       <div class="modal-footer">
         <a-button @click="closeCreate">取消</a-button>
@@ -227,6 +235,7 @@ interface RuleItem {
   negativeKeywords?: string[];
   plugins?: string;
   promptFile?: string;
+  contentLength?: number;
   lastRunAt?: string;
   disabled: boolean;
 }
@@ -307,7 +316,8 @@ const form = ref({
   keywords: [] as KeywordItem[],
   negativeKeywords: [] as KeywordItem[],
   selectedPluginKeys: [] as string[],
-  promptFile: ""
+  promptFile: "",
+  contentLength: undefined as number | undefined
 });
 
 const pluginList = ref<PluginOption[]>([]);
@@ -411,7 +421,8 @@ function openCreate() {
     keywords: [],
     negativeKeywords: [],
     selectedPluginKeys: [],
-    promptFile: ""
+    promptFile: "",
+    contentLength: undefined
   };
   keywordSearch.value = "";
   keywordPage.value = 1;
@@ -434,10 +445,11 @@ async function openEdit(rule: RuleItem) {
       keywords: (r.keywords ?? []).map((t: string) => ({ text: t, isNew: false })),
       negativeKeywords: (r.negativeKeywords ?? []).map((t: string) => ({ text: t, isNew: false })),
       selectedPluginKeys: parsePluginsString(r.plugins),
-      promptFile: r.promptFile ?? ""
+      promptFile: r.promptFile ?? "",
+      contentLength: r.contentLength ?? undefined
     };
   } catch {
-    form.value = { name: "", keywordDescription: "", description: "", keywords: [], negativeKeywords: [], selectedPluginKeys: [], promptFile: "" };
+    form.value = { name: "", keywordDescription: "", description: "", keywords: [], negativeKeywords: [], selectedPluginKeys: [], promptFile: "", contentLength: undefined };
   }
   keywordSearch.value = "";
   keywordPage.value = 1;
@@ -539,7 +551,8 @@ async function submitRule() {
     keywords: form.value.keywords.map((k) => k.text),
     negativeKeywords: form.value.negativeKeywords.map((k) => k.text),
     plugins: serializePlugins(form.value.selectedPluginKeys),
-    promptFile: form.value.promptFile?.trim() || undefined
+    promptFile: form.value.promptFile?.trim() || undefined,
+    contentLength: form.value.contentLength ?? undefined
   };
   if (editId.value) {
     await http.post("/rules", { ...payload, id: editId.value });

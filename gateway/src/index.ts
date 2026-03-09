@@ -28,6 +28,35 @@ const pluginRegistry = initPluginRegistry(
   logDir
 );
 
+// 应用启动时，将插件注册信息初始化到 plugins 表中（若不存在则插入）
+(async () => {
+  const plugins = pluginRegistry.listPlugins();
+  for (const plugin of plugins) {
+    try {
+      const existing = await pool.query(
+        `SELECT id FROM plugins WHERE key = $1`,
+        [plugin.key]
+      );
+      if (!existing.rowCount) {
+        await pool.query(
+          `INSERT INTO plugins (key, name, type, version, description)
+           VALUES ($1, $2, $3, $4, $5)`,
+          [
+            plugin.key,
+            plugin.name,
+            plugin.type,
+            plugin.version,
+            plugin.description ?? null
+          ]
+        );
+      }
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error("Failed to init plugins table for key:", plugin.key, err);
+    }
+  }
+})();
+
 app.use("/web", createWebRouter({ pool, pluginRegistry, logDir }));
 app.use("/api", createPluginApiRouter({ pool, pluginRegistry, logDir }));
 

@@ -25,6 +25,7 @@ interface RuleItem {
   negativeKeywords?: string[];
   disabled: boolean;
   promptFile?: string;
+  contentLength?: number;
 }
 
 interface RedditPostItem {
@@ -215,7 +216,7 @@ export async function run(options: PluginRunOptions): Promise<PluginRunResult> {
       "/api/reddit/posts"
     );
     const allPosts = postsResp.data?.items ?? [];
-    const posts = allPosts.slice(0, 120);
+    const posts = allPosts.slice(0, 200);
     writeLog("fetch_posts_done", {
       count: allPosts.length,
       limitedCount: posts.length
@@ -290,13 +291,29 @@ export async function run(options: PluginRunOptions): Promise<PluginRunResult> {
       }
     }
 
+    // 内容长度过滤：规则配置了 contentLength 时，超过则忽略（不进入 LLM），仅标记已处理
+    const contentLengthExceededIds: string[] = [];
+    const filteredCandidateList: typeof candidateList = [];
+    for (const item of candidateList) {
+      const len = (title(item.post) + "\n" + content(item.post)).length;
+      const maxLen = item.rule.contentLength;
+      if (maxLen != null && maxLen > 0 && len > maxLen) {
+        contentLengthExceededIds.push(item.post.id);
+        toMarkProcessed.add(item.post.id);
+      } else {
+        filteredCandidateList.push(item);
+      }
+    }
+    const finalCandidateList = filteredCandidateList;
+
     writeLog("keyword_match_done", {
       emptyContent: emptyContentIds.length,
       noMatch: noMatchIds.length,
-      toValidate: candidateList.length
+      contentLengthExceeded: contentLengthExceededIds.length,
+      toValidate: finalCandidateList.length
     });
 
-    if (candidateList.length === 0) {
+    if (finalCandidateList.length === 0) {
       if (toMarkProcessed.size > 0) {
         await client.post("/api/reddit/posts/mark-processed", {
           ids: Array.from(toMarkProcessed)
@@ -318,43 +335,65 @@ export async function run(options: PluginRunOptions): Promise<PluginRunResult> {
       summary?: string;
       hotword?: string;
     }
-    const validateResults: ValidateResult[] = await runWithLimit(
-      candidateList,
-      llmConcurrency,
-      async ({ post, rule, matchedKeywords: mk }) => {
-        const body: ValidateBody = {
-          ruleId: rule.id,
-          pluginKey,
-          content: `${title(post)}\n\n${content(post)}`,
-          ruleDescription: rule.description,
-          withSummary: true
-        };
-        try {
-          const res = await client.post<ValidateResponse>("/api/validate", body);
-          return {
-            post,
-            rule,
-            matchedKeywords: mk,
-            passed: res.data?.passed ?? false,
-            summary: res.data?.summary,
-            hotword: res.data?.hotword
-          };
-        } catch (err) {
-          // 某条校验请求失败时只记录日志并视为未通过，避免中断整个任务
-          writeLog("validate_error", {
-            ruleId: rule.id,
-            postId: post.id,
-            error: axiosErrorToDetail(err)
-          });
-          return {
-            post,
-            rule,
-            matchedKeywords: mk,
-            passed: false
-          };
-        }
+
+    const noLlmList: ValidateResult[] = [];
+    const toValidateList: typeof finalCandidateList = [];
+    for (const item of finalCandidateList) {
+      const desc = (item.rule.description ?? "").trim();
+      if (desc === "") {
+        noLlmList.push({
+          post: item.post,
+          rule: item.rule,
+          matchedKeywords: item.matchedKeywords,
+          passed: true
+        });
+      } else {
+        toValidateList.push(item);
       }
-    );
+    }
+
+    const validateResultsFromLlm: ValidateResult[] =
+      toValidateList.length === 0
+        ? []
+        : await runWithLimit(
+            toValidateList,
+            llmConcurrency,
+            async ({ post, rule, matchedKeywords: mk }) => {
+              const body: ValidateBody = {
+                ruleId: rule.id,
+                pluginKey,
+                content: `${title(post)}\n\n${content(post)}`,
+                ruleDescription: rule.description,
+                withSummary: true
+              };
+              try {
+                const res = await client.post<ValidateResponse>("/api/validate", body);
+                return {
+                  post,
+                  rule,
+                  matchedKeywords: mk,
+                  passed: res.data?.passed ?? false,
+                  summary: res.data?.summary,
+                  hotword: res.data?.hotword
+                };
+              } catch (err) {
+                // 某条校验请求失败时只记录日志并视为未通过，避免中断整个任务
+                writeLog("validate_error", {
+                  ruleId: rule.id,
+                  postId: post.id,
+                  error: axiosErrorToDetail(err)
+                });
+                return {
+                  post,
+                  rule,
+                  matchedKeywords: mk,
+                  passed: false
+                };
+              }
+            }
+          );
+
+    const validateResults: ValidateResult[] = [...noLlmList, ...validateResultsFromLlm];
 
     const passedList = validateResults.filter((r) => r.passed);
     const failedList = validateResults.filter((r) => !r.passed);
@@ -453,7 +492,7 @@ export async function run(options: PluginRunOptions): Promise<PluginRunResult> {
       failed: abandonSaveFailedCount
     });
 
-    for (const { post } of candidateList) toMarkProcessed.add(post.id);
+    for (const { post } of finalCandidateList) toMarkProcessed.add(post.id);
     if (toMarkProcessed.size > 0) {
       try {
         await client.post("/api/reddit/posts/mark-processed", {

@@ -3,7 +3,6 @@ import fs from "node:fs";
 import path from "node:path";
 import type { Pool } from "pg";
 import type { PluginRegistry } from "../plugin-registry/types";
-import { isPluginEnabled } from "../plugin-registry/state";
 
 interface Deps {
   pool: Pool;
@@ -125,7 +124,6 @@ export function initScheduler({
       writeSchedulerLog(logDir, "cron_tick", {
         plugins: plugins.map((p) => ({
           key: p.key,
-          enabled: isPluginEnabled(p.key),
           schedule: schedulesByKey.get(p.key) ?? null
         }))
       });
@@ -133,9 +131,8 @@ export function initScheduler({
       const now = new Date();
 
       for (const plugin of plugins) {
-        const stateEnabled = isPluginEnabled(plugin.key);
         const schedule = schedulesByKey.get(plugin.key);
-        if (!stateEnabled || !schedule || !schedule.enabled) continue;
+        if (!schedule || !schedule.enabled) continue;
         if (!pluginRegistry.hasPluginRunner(plugin.key)) continue;
 
         const cronExpr = schedule.cron;

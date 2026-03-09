@@ -3,8 +3,6 @@ import type {
   ValidateContentResponse
 } from "../api-model";
 import axios from "axios";
-import fs from "node:fs";
-import path from "node:path";
 import { callOpenRouter } from "../agents";
 import { loadPromptPair, fillTemplate } from "./prompts";
 
@@ -54,42 +52,30 @@ export async function validateContentWithLLM(
     content: payload.content
   });
 
-  const date = new Date().toISOString().slice(0, 10);
-  const logPath = path.join(logDir, `llm-${date}.log`);
-  fs.mkdirSync(logDir, { recursive: true });
+  const logContext = {
+    kind: "validate",
+    ruleId: payload.ruleId,
+    pluginKey: payload.pluginKey,
+    requestExtra: {
+      ruleDescription: ruleDesc,
+      content: payload.content,
+      withSummary: useSummary
+    }
+  };
 
   let text: string;
   try {
-    text = await callOpenRouter(
+    const res = await callOpenRouter(
       { system: pair.system, user },
-      "validate"
+      "validate",
+      { logDir, logContext }
     );
-
-    const line = JSON.stringify({
-      ts: new Date().toISOString(),
-      kind: "validate",
-      ruleId: payload.ruleId,
-      pluginKey: payload.pluginKey,
-      result: text
-    });
-    fs.appendFileSync(logPath, line + "\n", "utf8");
+    text = res.text;
   } catch (err) {
     const isAxios = axios.isAxiosError(err);
     const msg =
       (isAxios && (err.message || err.code)) ||
       (err instanceof Error ? err.message : String(err));
-
-    const line = JSON.stringify({
-      ts: new Date().toISOString(),
-      kind: "validate_error",
-      ruleId: payload.ruleId,
-      pluginKey: payload.pluginKey,
-      error: {
-        message: msg,
-        code: isAxios ? err.code : undefined
-      }
-    });
-    fs.appendFileSync(logPath, line + "\n", "utf8");
 
     return {
       passed: false,

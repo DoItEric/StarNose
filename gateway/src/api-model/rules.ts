@@ -16,6 +16,8 @@ export interface Rule {
   extra?: Record<string, unknown>;
   /** LLM 筛选时使用的提示词文件名（不含扩展名），位于 prompts 目录 */
   promptFile?: string;
+  /** 内容最大长度（字符数），超过则忽略，不进行 LLM 匹配；未配置则不限制 */
+  contentLength?: number;
 }
 
 export interface CreateRuleRequest {
@@ -51,6 +53,8 @@ export interface SaveRuleRequest {
   disabled?: boolean;
   /** 筛选对应的 prompt 文件名（不含扩展名） */
   promptFile?: string;
+  /** 内容最大长度（字符数），超过则忽略；未配置则不限制 */
+  contentLength?: number;
 }
 
 export interface ListRulesQuery {
