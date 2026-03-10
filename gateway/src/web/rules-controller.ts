@@ -42,6 +42,7 @@ export function createRulesController({ pool, logDir }: Deps): Router {
            remark,
            extra,
            content_length AS "contentLength",
+           content_min_length AS "contentMinLength",
            created_at AS "createdAt",
            updated_at AS "updatedAt"
          FROM rules
@@ -78,6 +79,7 @@ export function createRulesController({ pool, logDir }: Deps): Router {
            remark,
            extra,
            content_length AS "contentLength",
+           content_min_length AS "contentMinLength",
            created_at AS "createdAt",
            updated_at AS "updatedAt"
          FROM rules
@@ -95,6 +97,127 @@ export function createRulesController({ pool, logDir }: Deps): Router {
       res.status(500).json({ message: "Failed to load rule" });
     }
   });
+
+  // req0310: 规则关联的 Reddit subreddit 黑/白名单维护
+  router.get("/:id/subreddit-filters", async (req: Request, res: Response) => {
+    const { id } = req.params;
+    try {
+      const bl = await pool.query<{ name: string }>(
+        `SELECT name
+           FROM reddit_subreddit_blacklist
+          WHERE rule_id = $1::uuid
+          ORDER BY name ASC`,
+        [id]
+      );
+      const wl = await pool.query<{ name: string }>(
+        `SELECT name
+           FROM reddit_subreddit_whitelist
+          WHERE rule_id = $1::uuid
+          ORDER BY name ASC`,
+        [id]
+      );
+      res.json({
+        blacklist: bl.rows.map((r) => r.name),
+        whitelist: wl.rows.map((r) => r.name)
+      });
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error("GET /web/rules/:id/subreddit-filters error", err);
+      res.status(500).json({ message: "Failed to load subreddit filters" });
+    }
+  });
+
+  router.post("/:id/subreddit-blacklist", async (req: Request, res: Response) => {
+    const { id } = req.params;
+    const name = String((req.body as any)?.name ?? "").trim();
+    if (!name) {
+      res.status(400).json({ message: "name required" });
+      return;
+    }
+    try {
+      await pool.query(
+        `INSERT INTO reddit_subreddit_blacklist (rule_id, name)
+         VALUES ($1::uuid, $2)
+         ON CONFLICT DO NOTHING`,
+        [id, name]
+      );
+      res.status(204).end();
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error("POST /web/rules/:id/subreddit-blacklist error", err);
+      res.status(500).json({ message: "Failed to add subreddit blacklist" });
+    }
+  });
+
+  router.delete(
+    "/:id/subreddit-blacklist",
+    async (req: Request, res: Response) => {
+      const { id } = req.params;
+      const name = String((req.body as any)?.name ?? "").trim();
+      if (!name) {
+        res.status(400).json({ message: "name required" });
+        return;
+      }
+      try {
+        await pool.query(
+          `DELETE FROM reddit_subreddit_blacklist
+            WHERE rule_id = $1::uuid AND lower(name) = lower($2)`,
+          [id, name]
+        );
+        res.status(204).end();
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.error("DELETE /web/rules/:id/subreddit-blacklist error", err);
+        res.status(500).json({ message: "Failed to delete subreddit blacklist" });
+      }
+    }
+  );
+
+  router.post("/:id/subreddit-whitelist", async (req: Request, res: Response) => {
+    const { id } = req.params;
+    const name = String((req.body as any)?.name ?? "").trim();
+    if (!name) {
+      res.status(400).json({ message: "name required" });
+      return;
+    }
+    try {
+      await pool.query(
+        `INSERT INTO reddit_subreddit_whitelist (rule_id, name)
+         VALUES ($1::uuid, $2)
+         ON CONFLICT DO NOTHING`,
+        [id, name]
+      );
+      res.status(204).end();
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error("POST /web/rules/:id/subreddit-whitelist error", err);
+      res.status(500).json({ message: "Failed to add subreddit whitelist" });
+    }
+  });
+
+  router.delete(
+    "/:id/subreddit-whitelist",
+    async (req: Request, res: Response) => {
+      const { id } = req.params;
+      const name = String((req.body as any)?.name ?? "").trim();
+      if (!name) {
+        res.status(400).json({ message: "name required" });
+        return;
+      }
+      try {
+        await pool.query(
+          `DELETE FROM reddit_subreddit_whitelist
+            WHERE rule_id = $1::uuid AND lower(name) = lower($2)`,
+          [id, name]
+        );
+        res.status(204).end();
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.error("DELETE /web/rules/:id/subreddit-whitelist error", err);
+        res.status(500).json({ message: "Failed to delete subreddit whitelist" });
+      }
+    }
+  );
 
   router.post("/generate-keywords", async (req: Request, res: Response) => {
     const body = req.body as CreateRuleRequest;
@@ -125,9 +248,10 @@ export function createRulesController({ pool, logDir }: Deps): Router {
                  plugins = $6,
                  prompt_file = $7,
                  content_length = $8,
-                 disabled = COALESCE($9, disabled),
+                 content_min_length = $9,
+                 disabled = COALESCE($10, disabled),
                  updated_at = now()
-           WHERE id = $10`,
+           WHERE id = $11`,
           [
             body.name,
             body.keywordDescription ?? null,
@@ -137,6 +261,7 @@ export function createRulesController({ pool, logDir }: Deps): Router {
             body.plugins ?? null,
             body.promptFile ?? null,
             body.contentLength ?? null,
+            body.contentMinLength ?? null,
             body.disabled ?? null,
             body.id
           ]
@@ -144,8 +269,8 @@ export function createRulesController({ pool, logDir }: Deps): Router {
         res.status(200).json({ id: body.id });
       } else {
         const insertResult = await pool.query(
-          `INSERT INTO rules (name, keyword_description, description, keywords, negative_keywords, plugins, prompt_file, content_length, disabled, remark)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, COALESCE($9, false), NULL)
+          `INSERT INTO rules (name, keyword_description, description, keywords, negative_keywords, plugins, prompt_file, content_length, content_min_length, disabled, remark)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, COALESCE($10, false), NULL)
            RETURNING id`,
           [
             body.name,
@@ -156,6 +281,7 @@ export function createRulesController({ pool, logDir }: Deps): Router {
             body.plugins ?? null,
             body.promptFile ?? null,
             body.contentLength ?? null,
+            body.contentMinLength ?? null,
             body.disabled ?? null
           ]
         );

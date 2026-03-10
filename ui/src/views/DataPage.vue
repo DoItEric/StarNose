@@ -5,6 +5,14 @@
         <div class="page-header__row">
           <h2>数据</h2>
           <a-space>
+            <a-button
+              type="text"
+              size="small"
+              class="filter-toggle"
+              @click="filtersVisible = !filtersVisible"
+            >
+              {{ filtersVisible ? "收起筛选" : "展开筛选" }}
+            </a-button>
             <span class="toolbar-label">每页</span>
             <a-select
               v-model:value="pagination.pageSize"
@@ -27,7 +35,7 @@
         </div>
       </div>
 
-      <a-form layout="inline" class="filter-form">
+      <a-form v-show="filtersVisible" layout="inline" class="filter-form">
         <a-form-item label="抓取时间">
           <a-range-picker v-model:value="filters.crawlRange" show-time />
         </a-form-item>
@@ -58,6 +66,13 @@
             v-model:value="filters.keyword"
             placeholder="标题/正文关键字"
             style="width: 220px"
+          />
+        </a-form-item>
+        <a-form-item label="频道">
+          <a-input
+            v-model:value="filters.channel"
+            placeholder="channel/subreddit"
+            style="width: 180px"
           />
         </a-form-item>
         <a-form-item>
@@ -140,7 +155,7 @@
               size="middle"
               @click.stop="blacklistChannelAndMarkRead(record)"
             >
-              加入黑名单+已读
+              黑名单
             </a-button>
           </a-space>
         </template>
@@ -168,16 +183,33 @@
             @click="openCard(item)"
           >
             <template #title>
-              <a
-                v-if="item.url"
-                :href="item.url"
-                target="_blank"
-                rel="noopener noreferrer"
-                @click.stop
-              >
-                {{ item.title }}
-              </a>
-              <template v-else>{{ item.title }}</template>
+              <div class="data-card__title-row">
+                <a
+                  v-if="item.url"
+                  :href="item.url"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  @click.stop
+                >
+                  {{ item.title }}
+                </a>
+                <template v-else>{{ item.title }}</template>
+                <span
+                  class="favorite-star"
+                  :class="{ 'favorite-star--active': item.favorite }"
+                  @click.stop="openFavoriteModalOrToggle(item)"
+                >
+                  ★
+                </span>
+                <span
+                  class="connected-icon"
+                  :class="{ 'connected-icon--active': item.connected }"
+                  @click.stop="toggleConnected(item)"
+                  title="联络状态"
+                >
+                  ☎
+                </span>
+              </div>
             </template>
 
             <div class="data-card__meta">
@@ -251,7 +283,7 @@
                 block
                 @click.stop="blacklistChannelAndMarkRead(item)"
               >
-                加入黑名单
+                黑名单
               </a-button>
             </template>
           </a-card>
@@ -283,6 +315,39 @@
       </pre>
     </a-drawer>
   </div>
+
+  <a-modal
+    v-model:open="favoriteModalVisible"
+    title="选择收藏列表"
+    @ok="handleFavoriteModalOk"
+    @cancel="handleFavoriteModalCancel"
+  >
+    <div v-if="!favoriteLists.length" class="favorite-modal-section">
+      当前还没有收藏列表，将根据下方名称自动创建。
+    </div>
+    <div v-else class="favorite-modal-section">
+      <div class="favorite-modal-label">选择已有列表：</div>
+      <a-radio-group v-model:value="favoriteModalSelectedListId">
+        <a-radio
+          v-for="list in favoriteLists"
+          :key="list.id"
+          :value="list.id"
+        >
+          {{ list.name }}
+        </a-radio>
+      </a-radio-group>
+    </div>
+    <div class="favorite-modal-section">
+      <div class="favorite-modal-label">或新建列表：</div>
+      <a-input
+        v-model:value="favoriteModalNewListName"
+        placeholder="输入新的收藏列表名称"
+      />
+      <div class="favorite-modal-tip">
+        如填写新名称，则会创建新列表并将当前数据加入其中。
+      </div>
+    </div>
+  </a-modal>
 </template>
 
 <script setup lang="ts">
@@ -307,6 +372,8 @@ interface DataItem {
   hotWords?: string;
   read: number; // 0=未阅, 1=已阅, -1=忽略
   trackData?: Record<string, unknown>;
+  favorite?: boolean;
+  connected?: boolean;
 }
 
 interface RuleTab {
@@ -321,13 +388,17 @@ const filters = ref<{
   plugins: string[];
   readStatus: "all" | "read" | "unread" | "ignored";
   keyword: string;
+  channel: string;
 }>({
   crawlRange: null,
   publishRange: null,
   plugins: [],
   readStatus: "unread",
-  keyword: ""
+  keyword: "",
+  channel: ""
 });
+
+const filtersVisible = ref(true);
 
 const columns = [
   { title: "规则 ID", dataIndex: "ruleId", key: "ruleId" },
@@ -374,6 +445,12 @@ const tablePagination = computed(() => ({
 const detailVisible = ref(false);
 const currentRecord = ref<DataItem | null>(null);
 
+const favoriteModalVisible = ref(false);
+const favoriteModalTarget = ref<DataItem | null>(null);
+const favoriteModalSelectedListId = ref<string | null>(null);
+const favoriteModalNewListName = ref("");
+const favoriteLists = ref<{ id: string; name: string }[]>([]);
+
 async function search(resetPage = false) {
   if (resetPage) pagination.value.page = 1;
   const params: Record<string, unknown> = {};
@@ -394,6 +471,9 @@ async function search(resetPage = false) {
   }
   if (filters.value.keyword) {
     params.keyword = filters.value.keyword;
+  }
+  if (filters.value.channel) {
+    params.channel = filters.value.channel;
   }
   if (activeRuleId.value) {
     params.ruleId = activeRuleId.value;
@@ -420,7 +500,9 @@ async function search(resetPage = false) {
     summary: r.summary,
     hotWords: r.hotWords,
     read: typeof r.read === "number" ? r.read : r.read ? 1 : 0,
-    trackData: r.trackData
+    trackData: r.trackData,
+    favorite: !!r.favorite,
+    connected: !!(r.params && (r.params.connected === true || r.params.connected === "true"))
   }));
   pagination.value.total = Number(resp.data.total ?? 0);
 
@@ -485,6 +567,72 @@ async function setTracking(id: string, tracking: boolean) {
   await http.post("/data/track", { id, tracking });
 }
 
+async function toggleFavorite(record: DataItem) {
+  const next = !record.favorite;
+  await http.post("/data/favorite", { id: record.id, favorite: next });
+  record.favorite = next;
+}
+
+async function setConnected(id: string, connected: boolean) {
+  await http.post("/data/connected", { id, connected });
+}
+
+async function toggleConnected(record: DataItem) {
+  const next = !record.connected;
+  await setConnected(record.id, next);
+  record.connected = next;
+}
+
+async function loadFavoriteListsForModal() {
+  if (favoriteLists.value.length > 0) return;
+  try {
+    const resp = await http.get("/favorite-lists");
+    const items = (resp.data.items ?? []) as { id: string; name: string }[];
+    favoriteLists.value = items;
+  } catch {
+    favoriteLists.value = [];
+  }
+}
+
+async function openFavoriteModalOrToggle(record: DataItem) {
+  if (record.favorite) {
+    await toggleFavorite(record);
+    return;
+  }
+  favoriteModalTarget.value = record;
+  await loadFavoriteListsForModal();
+  const defaultItem =
+    favoriteLists.value.find((l) => l.name === "默认") ?? favoriteLists.value[0] ?? null;
+  favoriteModalSelectedListId.value = defaultItem ? defaultItem.id : null;
+  favoriteModalNewListName.value = "";
+  favoriteModalVisible.value = true;
+}
+
+async function handleFavoriteModalOk() {
+  const target = favoriteModalTarget.value;
+  if (!target) {
+    favoriteModalVisible.value = false;
+    return;
+  }
+  const listName = favoriteModalNewListName.value.trim();
+  const payload: Record<string, unknown> = {
+    id: target.id,
+    favorite: true
+  };
+  if (listName) {
+    payload.listName = listName;
+  } else if (favoriteModalSelectedListId.value) {
+    payload.listId = favoriteModalSelectedListId.value;
+  }
+  await http.post("/data/favorite", payload);
+  target.favorite = true;
+  favoriteModalVisible.value = false;
+}
+
+function handleFavoriteModalCancel() {
+  favoriteModalVisible.value = false;
+}
+
 async function openPage(record: DataItem) {
   if (!record.url) return;
   window.open(record.url, "_blank", "noopener,noreferrer");
@@ -519,7 +667,8 @@ async function blacklistChannelAndMarkRead(record: DataItem) {
   if (!record.channel) return;
   await http.post("/data/channel/blacklist", {
     source: record.source,
-    channel: record.channel
+    channel: record.channel,
+    ruleId: record.ruleId
   });
   // 前端本地同步：将当前列表中相同 source+channel 的项全部标记为已读
   for (const item of dataSource.value) {
@@ -617,6 +766,10 @@ onMounted(() => {
   color: rgba(0, 0, 0, 0.65);
 }
 
+.filter-toggle {
+  padding: 0 4px;
+}
+
 .filter-form {
   margin-bottom: 8px;
   row-gap: 12px;
@@ -644,6 +797,17 @@ onMounted(() => {
   justify-content: flex-end;
 }
 
+.connected-icon {
+  margin-left: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  color: rgba(0, 0, 0, 0.25);
+}
+
+.connected-icon--active {
+  color: #52c41a;
+}
+
 .data-card__meta {
   display: flex;
   flex-wrap: wrap;
@@ -669,6 +833,21 @@ onMounted(() => {
   font-size: 12px;
 }
 
+.favorite-modal-section {
+  margin-bottom: 12px;
+}
+
+.favorite-modal-label {
+  margin-bottom: 4px;
+  font-weight: 500;
+}
+
+.favorite-modal-tip {
+  margin-top: 4px;
+  font-size: 12px;
+  color: rgba(0, 0, 0, 0.45);
+}
+
 .data-card__keywords {
   margin-top: 8px;
   font-size: 12px;
@@ -676,6 +855,22 @@ onMounted(() => {
 
 .data-card--read {
   background-color: #f5f5f5;
+}
+
+.data-card__title-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.favorite-star {
+  margin-left: auto;
+  cursor: pointer;
+  color: rgba(0, 0, 0, 0.25);
+}
+
+.favorite-star--active {
+  color: #fadb14;
 }
 
 .data-card :deep(.ant-card-actions) {

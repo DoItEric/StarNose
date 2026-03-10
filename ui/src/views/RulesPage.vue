@@ -213,6 +213,59 @@
             style="width: 100%"
           />
         </a-form-item>
+
+        <a-form-item label="内容最小长度（字符）">
+          <a-input-number
+            v-model:value="form.contentMinLength"
+            placeholder="不填则不限制，不足则不做 LLM 匹配"
+            :min="1"
+            style="width: 100%"
+          />
+        </a-form-item>
+
+        <a-form-item label="Reddit 白名单（维护后仅抓取这些频道）">
+          <a-input
+            v-model:value="addWhitelistInput"
+            placeholder="输入 subreddit，多个用逗号分隔"
+            allow-clear
+            @press-enter="addWhitelistFromInput"
+          />
+          <div class="tag-list">
+            <a-tag
+              v-for="name in form.subredditWhitelist"
+              :key="'wl-' + name"
+              closable
+              @close.prevent="removeWhitelist(name)"
+            >
+              {{ name }}
+            </a-tag>
+            <div v-if="form.subredditWhitelist.length === 0" class="keyword-empty">
+              未配置白名单（将使用黑名单进行排除）
+            </div>
+          </div>
+        </a-form-item>
+
+        <a-form-item label="Reddit 黑名单（白名单为空时生效）">
+          <a-input
+            v-model:value="addBlacklistInput"
+            placeholder="输入 subreddit，多个用逗号分隔"
+            allow-clear
+            @press-enter="addBlacklistFromInput"
+          />
+          <div class="tag-list">
+            <a-tag
+              v-for="name in form.subredditBlacklist"
+              :key="'bl-' + name"
+              closable
+              @close.prevent="removeBlacklist(name)"
+            >
+              {{ name }}
+            </a-tag>
+            <div v-if="form.subredditBlacklist.length === 0" class="keyword-empty">
+              未配置黑名单
+            </div>
+          </div>
+        </a-form-item>
       </a-form>
       <div class="modal-footer">
         <a-button @click="closeCreate">取消</a-button>
@@ -236,6 +289,7 @@ interface RuleItem {
   plugins?: string;
   promptFile?: string;
   contentLength?: number;
+  contentMinLength?: number;
   lastRunAt?: string;
   disabled: boolean;
 }
@@ -317,7 +371,10 @@ const form = ref({
   negativeKeywords: [] as KeywordItem[],
   selectedPluginKeys: [] as string[],
   promptFile: "",
-  contentLength: undefined as number | undefined
+  contentLength: undefined as number | undefined,
+  contentMinLength: undefined as number | undefined,
+  subredditWhitelist: [] as string[],
+  subredditBlacklist: [] as string[]
 });
 
 const pluginList = ref<PluginOption[]>([]);
@@ -334,6 +391,11 @@ const negativeKeywordSearch = ref("");
 const negativeKeywordPage = ref(1);
 const negativePageSize = ref(10);
 const addNegativeKeywordInput = ref("");
+
+const originalWhitelist = ref<string[]>([]);
+const originalBlacklist = ref<string[]>([]);
+const addWhitelistInput = ref("");
+const addBlacklistInput = ref("");
 
 const filteredKeywords = computed(() => {
   const q = keywordSearch.value.trim().toLowerCase();
@@ -422,8 +484,15 @@ function openCreate() {
     negativeKeywords: [],
     selectedPluginKeys: [],
     promptFile: "",
-    contentLength: undefined
+    contentLength: undefined,
+    contentMinLength: undefined,
+    subredditWhitelist: [],
+    subredditBlacklist: []
   };
+  originalWhitelist.value = [];
+  originalBlacklist.value = [];
+  addWhitelistInput.value = "";
+  addBlacklistInput.value = "";
   keywordSearch.value = "";
   keywordPage.value = 1;
   addKeywordInput.value = "";
@@ -446,11 +515,43 @@ async function openEdit(rule: RuleItem) {
       negativeKeywords: (r.negativeKeywords ?? []).map((t: string) => ({ text: t, isNew: false })),
       selectedPluginKeys: parsePluginsString(r.plugins),
       promptFile: r.promptFile ?? "",
-      contentLength: r.contentLength ?? undefined
+      contentLength: r.contentLength ?? undefined,
+      contentMinLength: r.contentMinLength ?? undefined,
+      subredditWhitelist: [],
+      subredditBlacklist: []
     };
   } catch {
-    form.value = { name: "", keywordDescription: "", description: "", keywords: [], negativeKeywords: [], selectedPluginKeys: [], promptFile: "", contentLength: undefined };
+    form.value = {
+      name: "",
+      keywordDescription: "",
+      description: "",
+      keywords: [],
+      negativeKeywords: [],
+      selectedPluginKeys: [],
+      promptFile: "",
+      contentLength: undefined,
+      contentMinLength: undefined,
+      subredditWhitelist: [],
+      subredditBlacklist: []
+    };
   }
+  // req0310: 加载该规则的 subreddit 黑/白名单
+  try {
+    const f = await http.get(`/rules/${rule.id}/subreddit-filters`);
+    const wl = Array.isArray(f.data?.whitelist) ? f.data.whitelist : [];
+    const bl = Array.isArray(f.data?.blacklist) ? f.data.blacklist : [];
+    form.value.subredditWhitelist = wl;
+    form.value.subredditBlacklist = bl;
+    originalWhitelist.value = [...wl];
+    originalBlacklist.value = [...bl];
+  } catch {
+    form.value.subredditWhitelist = [];
+    form.value.subredditBlacklist = [];
+    originalWhitelist.value = [];
+    originalBlacklist.value = [];
+  }
+  addWhitelistInput.value = "";
+  addBlacklistInput.value = "";
   keywordSearch.value = "";
   keywordPage.value = 1;
   addKeywordInput.value = "";
@@ -543,6 +644,46 @@ function addNegativeKeywordsFromInput() {
   addNegativeKeywordInput.value = "";
 }
 
+function normalizeNames(input: string): string[] {
+  return input
+    .split(/[,，]/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+function addWhitelistFromInput() {
+  const parts = normalizeNames(addWhitelistInput.value);
+  const existing = new Set(form.value.subredditWhitelist.map((s) => s.toLowerCase()));
+  for (const p of parts) {
+    if (!existing.has(p.toLowerCase())) {
+      form.value.subredditWhitelist.push(p);
+      existing.add(p.toLowerCase());
+    }
+  }
+  addWhitelistInput.value = "";
+}
+function addBlacklistFromInput() {
+  const parts = normalizeNames(addBlacklistInput.value);
+  const existing = new Set(form.value.subredditBlacklist.map((s) => s.toLowerCase()));
+  for (const p of parts) {
+    if (!existing.has(p.toLowerCase())) {
+      form.value.subredditBlacklist.push(p);
+      existing.add(p.toLowerCase());
+    }
+  }
+  addBlacklistInput.value = "";
+}
+function removeWhitelist(name: string) {
+  form.value.subredditWhitelist = form.value.subredditWhitelist.filter(
+    (s) => s.toLowerCase() !== name.toLowerCase()
+  );
+}
+function removeBlacklist(name: string) {
+  form.value.subredditBlacklist = form.value.subredditBlacklist.filter(
+    (s) => s.toLowerCase() !== name.toLowerCase()
+  );
+}
+
 async function submitRule() {
   const payload = {
     name: form.value.name,
@@ -552,13 +693,51 @@ async function submitRule() {
     negativeKeywords: form.value.negativeKeywords.map((k) => k.text),
     plugins: serializePlugins(form.value.selectedPluginKeys),
     promptFile: form.value.promptFile?.trim() || undefined,
-    contentLength: form.value.contentLength ?? undefined
+    contentLength: form.value.contentLength ?? undefined,
+    contentMinLength: form.value.contentMinLength ?? undefined
   };
+  let ruleId = editId.value ?? null;
   if (editId.value) {
     await http.post("/rules", { ...payload, id: editId.value });
   } else {
-    await http.post("/rules", payload);
+    const created = await http.post("/rules", payload);
+    ruleId = created.data?.id ?? null;
   }
+
+  // req0310: 同步该规则的 subreddit 黑/白名单（差量更新）
+  if (ruleId) {
+    const wlNow = form.value.subredditWhitelist;
+    const blNow = form.value.subredditBlacklist;
+    const wlOld = originalWhitelist.value;
+    const blOld = originalBlacklist.value;
+
+    const toSet = (arr: string[]) => new Set(arr.map((s) => s.toLowerCase()));
+    const wlNowSet = toSet(wlNow);
+    const wlOldSet = toSet(wlOld);
+    const blNowSet = toSet(blNow);
+    const blOldSet = toSet(blOld);
+
+    const wlAdd = wlNow.filter((s) => !wlOldSet.has(s.toLowerCase()));
+    const wlDel = wlOld.filter((s) => !wlNowSet.has(s.toLowerCase()));
+    const blAdd = blNow.filter((s) => !blOldSet.has(s.toLowerCase()));
+    const blDel = blOld.filter((s) => !blNowSet.has(s.toLowerCase()));
+
+    await Promise.all([
+      ...wlAdd.map((name) =>
+        http.post(`/rules/${ruleId}/subreddit-whitelist`, { name })
+      ),
+      ...wlDel.map((name) =>
+        http.delete(`/rules/${ruleId}/subreddit-whitelist`, { data: { name } })
+      ),
+      ...blAdd.map((name) =>
+        http.post(`/rules/${ruleId}/subreddit-blacklist`, { name })
+      ),
+      ...blDel.map((name) =>
+        http.delete(`/rules/${ruleId}/subreddit-blacklist`, { data: { name } })
+      )
+    ]);
+  }
+
   createVisible.value = false;
   await loadRules();
 }
@@ -637,6 +816,13 @@ async function deleteRule(rule: RuleItem) {
   color: #999;
   padding: 16px;
   text-align: center;
+}
+
+.tag-list {
+  margin-top: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .keyword-pagination {

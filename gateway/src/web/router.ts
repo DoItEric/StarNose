@@ -8,6 +8,8 @@ import { createDataController } from "./data-controller";
 import { createDataAbandonController } from "./data-abandon-controller";
 import { createAnalysisController } from "./analysis-controller";
 import { createStatusController } from "./status-controller";
+import { createTranslateController } from "./translate-controller";
+import { createFavoriteListsController } from "./favorite-lists-controller";
 
 interface Deps {
   pool: Pool;
@@ -24,6 +26,8 @@ export function createWebRouter(deps: Deps): Router {
   router.use("/data-abandon", createDataAbandonController(deps));
   router.use("/analysis", createAnalysisController(deps));
   router.use("/status", createStatusController(deps));
+  router.use("/translate", createTranslateController());
+  router.use("/favorite-lists", createFavoriteListsController(deps));
 
   return router;
 }

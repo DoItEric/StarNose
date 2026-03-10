@@ -39,7 +39,8 @@ export function createRulesApi({ pool }: Deps): Router {
            remark,
            extra,
            prompt_file AS "promptFile",
-           content_length AS "contentLength"
+           content_length AS "contentLength",
+           content_min_length AS "contentMinLength"
          FROM rules
          ${whereClause}
          ORDER BY created_at ASC`,

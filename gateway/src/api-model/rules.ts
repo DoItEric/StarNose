@@ -18,6 +18,8 @@ export interface Rule {
   promptFile?: string;
   /** 内容最大长度（字符数），超过则忽略，不进行 LLM 匹配；未配置则不限制 */
   contentLength?: number;
+  /** 内容最小长度（字符数），不足则忽略，不进行 LLM 匹配；未配置则不限制 */
+  contentMinLength?: number;
 }
 
 export interface CreateRuleRequest {
@@ -55,6 +57,8 @@ export interface SaveRuleRequest {
   promptFile?: string;
   /** 内容最大长度（字符数），超过则忽略；未配置则不限制 */
   contentLength?: number;
+  /** 内容最小长度（字符数），不足则忽略；未配置则不限制 */
+  contentMinLength?: number;
 }
 
 export interface ListRulesQuery {

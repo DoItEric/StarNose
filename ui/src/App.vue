@@ -1,6 +1,12 @@
 <template>
   <a-layout class="app-layout">
-    <a-layout-sider theme="light" width="220" class="app-sider">
+    <!-- 桌面端侧边栏 -->
+    <a-layout-sider
+      v-if="!isMobile"
+      theme="light"
+      width="220"
+      class="app-sider"
+    >
       <div class="logo">StarNose</div>
       <a-menu
         mode="inline"
@@ -15,6 +21,12 @@
         </a-menu-item>
         <a-menu-item key="data">
           {{ $t("menu.data") }}
+        </a-menu-item>
+        <a-menu-item key="checkcheck">
+          {{ $t("menu.checkcheck") }}
+        </a-menu-item>
+        <a-menu-item key="favorites">
+          {{ $t("menu.favorites") }}
         </a-menu-item>
         <a-menu-item key="data_abandon">
           {{ $t("menu.data_abandon") }}
@@ -43,17 +55,81 @@
 
     <a-layout>
       <a-layout-header class="app-header">
-        <div class="header-title">{{ currentTitle }}</div>
+        <div class="header-left">
+          <a-button
+            v-if="isMobile"
+            type="text"
+            class="menu-toggle"
+            @click="mobileMenuVisible = true"
+          >
+            ☰
+          </a-button>
+          <div class="header-title">{{ currentTitle }}</div>
+        </div>
       </a-layout-header>
+
       <a-layout-content class="app-content">
         <router-view />
       </a-layout-content>
     </a-layout>
+
+    <!-- 移动端抽屉菜单 -->
+    <a-drawer
+      v-if="isMobile"
+      v-model:open="mobileMenuVisible"
+      placement="left"
+      :width="260"
+      title="StarNose"
+    >
+      <a-menu
+        mode="inline"
+        :selected-keys="[selectedKey]"
+        @click="onMobileMenuClick"
+      >
+        <a-menu-item key="datasources">
+          {{ $t("menu.datasources") }}
+        </a-menu-item>
+        <a-menu-item key="rules">
+          {{ $t("menu.rules") }}
+        </a-menu-item>
+        <a-menu-item key="data">
+          {{ $t("menu.data") }}
+        </a-menu-item>
+        <a-menu-item key="checkcheck">
+          {{ $t("menu.checkcheck") }}
+        </a-menu-item>
+        <a-menu-item key="favorites">
+          {{ $t("menu.favorites") }}
+        </a-menu-item>
+        <a-menu-item key="data_abandon">
+          {{ $t("menu.data_abandon") }}
+        </a-menu-item>
+        <a-menu-item key="tracking">
+          {{ $t("menu.tracking") }}
+        </a-menu-item>
+        <a-menu-item key="analysis">
+          {{ $t("menu.analysis") }}
+        </a-menu-item>
+        <a-menu-item key="settings">
+          {{ $t("menu.settings") }}
+        </a-menu-item>
+      </a-menu>
+      <div class="lang-switch lang-switch--mobile">
+        <a-segmented
+          size="small"
+          :options="[
+            { label: '中文', value: 'zh-CN' },
+            { label: 'English', value: 'en-US' }
+          ]"
+          v-model:value="locale"
+        />
+      </div>
+    </a-drawer>
   </a-layout>
 </template>
 
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { useRouter, useRoute } from "vue-router";
 import { useI18n } from "vue-i18n";
 
@@ -63,6 +139,9 @@ const { t, locale } = useI18n();
 
 const selectedKey = computed(() => (route.name as string) || "datasources");
 
+const isMobile = ref(false);
+const mobileMenuVisible = ref(false);
+
 const currentTitle = computed(() => {
   switch (route.name) {
     case "datasources":
@@ -71,6 +150,10 @@ const currentTitle = computed(() => {
       return t("menu.rules");
     case "data":
       return t("menu.data");
+    case "checkcheck":
+      return t("menu.checkcheck");
+    case "favorites":
+      return t("menu.favorites");
     case "data_abandon":
       return t("menu.data_abandon");
     case "tracking":
@@ -87,6 +170,30 @@ const currentTitle = computed(() => {
 function onMenuClick(info: { key: string }) {
   router.push({ name: info.key });
 }
+
+function onMobileMenuClick(info: { key: string }) {
+  mobileMenuVisible.value = false;
+  router.push({ name: info.key });
+}
+
+function updateIsMobile() {
+  if (typeof window === "undefined") return;
+  isMobile.value = window.innerWidth <= 768;
+}
+
+let resizeHandler: (() => void) | null = null;
+
+onMounted(() => {
+  updateIsMobile();
+  resizeHandler = () => updateIsMobile();
+  window.addEventListener("resize", resizeHandler);
+});
+
+onBeforeUnmount(() => {
+  if (resizeHandler) {
+    window.removeEventListener("resize", resizeHandler);
+  }
+});
 </script>
 
 <style scoped>
@@ -118,7 +225,18 @@ function onMenuClick(info: { key: string }) {
   border-bottom: 1px solid #f0f0f0;
   display: flex;
   align-items: center;
-  padding-inline: 24px;
+  padding-inline: 16px;
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.menu-toggle {
+  padding: 0;
+  font-size: 20px;
 }
 
 .header-title {
@@ -139,5 +257,23 @@ function onMenuClick(info: { key: string }) {
 .lang-switch {
   padding: 12px 16px;
   margin-top: auto;
+}
+
+.lang-switch--mobile {
+  margin-top: 16px;
+  padding: 0;
+}
+
+@media (max-width: 768px) {
+  .app-layout {
+    height: 100vh;
+    overflow: hidden;
+  }
+
+  .app-content {
+    margin: 8px;
+    padding: 8px;
+    height: auto;
+  }
 }
 </style>

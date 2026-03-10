@@ -26,6 +26,7 @@ interface RuleItem {
   disabled: boolean;
   promptFile?: string;
   contentLength?: number;
+  contentMinLength?: number;
 }
 
 interface RedditPostItem {
@@ -95,6 +96,48 @@ async function fetchSubredditBlacklist(
   } catch (err) {
     writeLog("fetch_subreddit_blacklist_error", axiosErrorToDetail(err));
     return new Set();
+  }
+}
+
+async function fetchSubredditFilters(
+  client: AxiosInstance
+): Promise<{
+  blacklistByRuleId: Record<string, Set<string>>;
+  whitelistByRuleId: Record<string, Set<string>>;
+  globalBlacklist: Set<string>;
+}> {
+  try {
+    const resp = await client.get<{
+      items?: { ruleId: string; blacklist?: string[]; whitelist?: string[] }[];
+      globalBlacklist?: string[];
+    }>("/api/reddit/subreddit-filters");
+    const items = resp.data?.items ?? [];
+    const blacklistByRuleId: Record<string, Set<string>> = {};
+    const whitelistByRuleId: Record<string, Set<string>> = {};
+    for (const row of items) {
+      if (!row?.ruleId) continue;
+      blacklistByRuleId[row.ruleId] = new Set(
+        (row.blacklist ?? []).map((s) => String(s).toLowerCase())
+      );
+      whitelistByRuleId[row.ruleId] = new Set(
+        (row.whitelist ?? []).map((s) => String(s).toLowerCase())
+      );
+    }
+    const globalBlacklist = new Set(
+      (resp.data?.globalBlacklist ?? []).map((s) => String(s).toLowerCase())
+    );
+    writeLog("fetch_subreddit_filters_done", {
+      rules: items.length,
+      globalBlacklist: globalBlacklist.size
+    });
+    return { blacklistByRuleId, whitelistByRuleId, globalBlacklist };
+  } catch (err) {
+    writeLog("fetch_subreddit_filters_error", axiosErrorToDetail(err));
+    return {
+      blacklistByRuleId: {},
+      whitelistByRuleId: {},
+      globalBlacklist: new Set()
+    };
   }
 }
 
@@ -236,8 +279,11 @@ export async function run(options: PluginRunOptions): Promise<PluginRunResult> {
       matchedKeywords: string[];
     }[] = [];
 
-    // 加载 subreddit 黑名单，命中则跳过并直接标记为已处理
-    const subredditBlacklist = await fetchSubredditBlacklist(client);
+    // 加载 subreddit 黑/白名单（按 rule 维度），兼容旧版全局黑名单接口
+    const legacyGlobalBlacklist = await fetchSubredditBlacklist(client);
+    const { blacklistByRuleId, whitelistByRuleId, globalBlacklist } =
+      await fetchSubredditFilters(client);
+    for (const v of legacyGlobalBlacklist) globalBlacklist.add(v);
 
     const title = (p: RedditPostItem) => p.title ?? "";
     const content = (p: RedditPostItem) => p.content ?? "";
@@ -248,14 +294,6 @@ export async function run(options: PluginRunOptions): Promise<PluginRunResult> {
     );
     for (const post of posts) {
       const subLower = (post.subreddit ?? "").toLowerCase();
-      if (subLower && subredditBlacklist.has(subLower)) {
-        toMarkProcessed.add(post.id);
-        writeLog("skip_post_blacklisted_subreddit", {
-          id: post.id,
-          subreddit: post.subreddit
-        });
-        continue;
-      }
       if (content(post).trim() === "") {
         emptyContentIds.push(post.id);
         toMarkProcessed.add(post.id);
@@ -263,8 +301,20 @@ export async function run(options: PluginRunOptions): Promise<PluginRunResult> {
       }
       let matched = false;
       for (let i = 0; i < rules.length; i++) {
+        const rule = rules[i];
+        // 白名单优先：规则配置了白名单则仅放行白名单；否则用规则黑名单 + 全局黑名单过滤
+        if (subLower) {
+          const wl = whitelistByRuleId[rule.id];
+          if (wl && wl.size > 0) {
+            if (!wl.has(subLower)) continue;
+          } else {
+            const bl = blacklistByRuleId[rule.id];
+            if ((bl && bl.has(subLower)) || globalBlacklist.has(subLower)) {
+              continue;
+            }
+          }
+        }
         if (ruleMatches(rulePartsList[i], title(post), content(post))) {
-          const rule = rules[i];
           // 正面命中后再做负面匹配：若负面命中，则视为该规则不匹配，继续尝试下一条规则
           if (
             (rule.negativeKeywords?.length ?? 0) > 0 &&
@@ -291,13 +341,18 @@ export async function run(options: PluginRunOptions): Promise<PluginRunResult> {
       }
     }
 
-    // 内容长度过滤：规则配置了 contentLength 时，超过则忽略（不进入 LLM），仅标记已处理
+    // 内容长度过滤：规则配置了 contentMinLength/contentLength 时，不满足则忽略（不进入 LLM），仅标记已处理
     const contentLengthExceededIds: string[] = [];
+    const contentLengthTooShortIds: string[] = [];
     const filteredCandidateList: typeof candidateList = [];
     for (const item of candidateList) {
       const len = (title(item.post) + "\n" + content(item.post)).length;
+      const minLen = item.rule.contentMinLength;
       const maxLen = item.rule.contentLength;
-      if (maxLen != null && maxLen > 0 && len > maxLen) {
+      if (minLen != null && minLen > 0 && len < minLen) {
+        contentLengthTooShortIds.push(item.post.id);
+        toMarkProcessed.add(item.post.id);
+      } else if (maxLen != null && maxLen > 0 && len > maxLen) {
         contentLengthExceededIds.push(item.post.id);
         toMarkProcessed.add(item.post.id);
       } else {
@@ -309,6 +364,7 @@ export async function run(options: PluginRunOptions): Promise<PluginRunResult> {
     writeLog("keyword_match_done", {
       emptyContent: emptyContentIds.length,
       noMatch: noMatchIds.length,
+      contentLengthTooShort: contentLengthTooShortIds.length,
       contentLengthExceeded: contentLengthExceededIds.length,
       toValidate: finalCandidateList.length
     });

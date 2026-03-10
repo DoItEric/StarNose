@@ -87,6 +87,13 @@ export function createDataAbandonController({ pool }: Deps): Router {
       paramsForStats.push(query.sources);
       conditionsForStats.push(`source = ANY($${paramsForStats.length}::text[])`);
     }
+    if (query.channel && String(query.channel).trim() !== "") {
+      params.push(`%${String(query.channel).trim()}%`);
+      conditions.push(`channel ILIKE $${params.length}`);
+
+      paramsForStats.push(`%${String(query.channel).trim()}%`);
+      conditionsForStats.push(`channel ILIKE $${paramsForStats.length}`);
+    }
     const trackingOnly = toBoolean((query as any).trackingOnly);
     if (trackingOnly) {
       conditions.push(
@@ -310,6 +317,7 @@ export function createDataAbandonController({ pool }: Deps): Router {
       const body = req.body as BlacklistChannelRequest;
       const source = (body.source ?? "").trim();
       const channel = (body.channel ?? "").trim();
+      const ruleId = typeof (body as any).ruleId === "string" ? (body as any).ruleId.trim() : "";
 
       if (!source || !channel) {
         res.status(400).json({ message: "source and channel are required" });
@@ -326,10 +334,10 @@ export function createDataAbandonController({ pool }: Deps): Router {
         // 1) 写入 reddit_subreddit_blacklist
         try {
           await pool.query(
-            `INSERT INTO reddit_subreddit_blacklist (name)
-             VALUES ($1)
-             ON CONFLICT (name) DO NOTHING`,
-            [channel]
+            `INSERT INTO reddit_subreddit_blacklist (rule_id, name)
+             VALUES (NULLIF($1, '')::uuid, $2)
+             ON CONFLICT DO NOTHING`,
+            [ruleId, channel]
           );
         } catch (e) {
           const pgErr = e as { code?: string };
@@ -337,9 +345,9 @@ export function createDataAbandonController({ pool }: Deps): Router {
           // 兼容旧库未加唯一约束的情况，降级为普通 INSERT（允许重复行）
           if (pgErr.code === "42P10") {
             await pool.query(
-              `INSERT INTO reddit_subreddit_blacklist (name)
-               VALUES ($1)`,
-              [channel]
+              `INSERT INTO reddit_subreddit_blacklist (rule_id, name)
+               VALUES (NULLIF($1, '')::uuid, $2)`,
+              [ruleId, channel]
             );
           } else {
             throw e;

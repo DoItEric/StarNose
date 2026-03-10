@@ -78,7 +78,7 @@ export function createRedditApi({ pool }: Deps): Router {
     async (_req: Request, res: Response): Promise<void> => {
       try {
         const result = await pool.query<{ name: string }>(
-          `SELECT name FROM reddit_subreddit_blacklist ORDER BY name ASC`
+          `SELECT name FROM reddit_subreddit_blacklist WHERE rule_id IS NULL ORDER BY name ASC`
         );
         res.json({ items: result.rows });
       } catch (err) {
@@ -106,9 +106,9 @@ export function createRedditApi({ pool }: Deps): Router {
       }
       try {
         await pool.query(
-          `INSERT INTO reddit_subreddit_blacklist (name)
-           VALUES ($1)
-           ON CONFLICT (name) DO NOTHING`,
+          `INSERT INTO reddit_subreddit_blacklist (rule_id, name)
+           VALUES (NULL, $1)
+           ON CONFLICT DO NOTHING`,
           [name]
         );
         res.json({ ok: true, name });
@@ -121,6 +121,58 @@ export function createRedditApi({ pool }: Deps): Router {
         res
           .status(500)
           .json({ message: "Failed to insert subreddit blacklist" });
+      }
+    }
+  );
+
+  /**
+   * 获取按规则维度的 subreddit 黑/白名单，供插件使用。
+   * - items: 每条 rule 的 blacklist/whitelist
+   * - globalBlacklist: rule_id 为空的历史全局黑名单
+   */
+  router.get(
+    "/subreddit-filters",
+    async (_req: Request, res: Response): Promise<void> => {
+      try {
+        const globalRes = await pool.query<{ name: string }>(
+          `SELECT name FROM reddit_subreddit_blacklist WHERE rule_id IS NULL ORDER BY name ASC`
+        );
+        const blRes = await pool.query<{ ruleId: string; name: string }>(
+          `SELECT rule_id AS "ruleId", name
+             FROM reddit_subreddit_blacklist
+            WHERE rule_id IS NOT NULL
+            ORDER BY rule_id ASC, name ASC`
+        );
+        const wlRes = await pool.query<{ ruleId: string; name: string }>(
+          `SELECT rule_id AS "ruleId", name
+             FROM reddit_subreddit_whitelist
+            ORDER BY rule_id ASC, name ASC`
+        );
+
+        const map: Record<
+          string,
+          { ruleId: string; blacklist: string[]; whitelist: string[] }
+        > = {};
+        for (const row of blRes.rows) {
+          if (!map[row.ruleId]) {
+            map[row.ruleId] = { ruleId: row.ruleId, blacklist: [], whitelist: [] };
+          }
+          map[row.ruleId].blacklist.push(row.name);
+        }
+        for (const row of wlRes.rows) {
+          if (!map[row.ruleId]) {
+            map[row.ruleId] = { ruleId: row.ruleId, blacklist: [], whitelist: [] };
+          }
+          map[row.ruleId].whitelist.push(row.name);
+        }
+        res.json({
+          items: Object.values(map),
+          globalBlacklist: globalRes.rows.map((r) => r.name)
+        });
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.error("GET /api/reddit/subreddit-filters error", err);
+        res.status(500).json({ message: "Failed to load subreddit filters" });
       }
     }
   );

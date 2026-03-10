@@ -7,6 +7,7 @@ import type {
   ListDataQuery,
   ListDataResponse,
   MarkDataReadRequest,
+  ToggleFavoriteRequest,
   TrackDataRequest
 } from "../api-model";
 
@@ -80,6 +81,13 @@ export function createDataController({ pool }: Deps): Router {
       paramsForStats.push(query.publishTimeTo);
       conditionsForStats.push(`publish_time <= $${paramsForStats.length}`);
     }
+    if (query.channel && String(query.channel).trim() !== "") {
+      params.push(`%${String(query.channel).trim()}%`);
+      conditions.push(`channel ILIKE $${params.length}`);
+
+      paramsForStats.push(`%${String(query.channel).trim()}%`);
+      conditionsForStats.push(`channel ILIKE $${paramsForStats.length}`);
+    }
     if (query.sources && query.sources.length > 0) {
       params.push(query.sources);
       conditions.push(`source = ANY($${params.length}::text[])`);
@@ -95,6 +103,49 @@ export function createDataController({ pool }: Deps): Router {
       conditionsForStats.push(
         `EXISTS (SELECT 1 FROM tracking_items ti WHERE ti.data_id = data_items.id)`
       );
+    }
+    const favoriteOnly = toBoolean((query as any).favoriteOnly);
+    const favoriteListId = typeof (query as any).favoriteListId === "string"
+      ? String((query as any).favoriteListId).trim()
+      : "";
+    if (favoriteOnly) {
+      if (favoriteListId) {
+        params.push(favoriteListId);
+        conditions.push(
+          `EXISTS (SELECT 1 FROM favorite_items fi WHERE fi.data_id = data_items.id AND fi.list_id = $${params.length}::uuid)`
+        );
+        paramsForStats.push(favoriteListId);
+        conditionsForStats.push(
+          `EXISTS (SELECT 1 FROM favorite_items fi WHERE fi.data_id = data_items.id AND fi.list_id = $${paramsForStats.length}::uuid)`
+        );
+      } else {
+        conditions.push(
+          `EXISTS (SELECT 1 FROM favorite_items fi WHERE fi.data_id = data_items.id)`
+        );
+        conditionsForStats.push(
+          `EXISTS (SELECT 1 FROM favorite_items fi WHERE fi.data_id = data_items.id)`
+        );
+      }
+    }
+
+    const connected =
+      (query as any).connected === true || (query as any).connected === "true"
+        ? true
+        : (query as any).connected === false || (query as any).connected === "false"
+          ? false
+          : undefined;
+    if (connected != null) {
+      if (connected) {
+        conditions.push(`COALESCE((params->>'connected')::boolean, false) = true`);
+        conditionsForStats.push(
+          `COALESCE((params->>'connected')::boolean, false) = true`
+        );
+      } else {
+        conditions.push(`COALESCE((params->>'connected')::boolean, false) = false`);
+        conditionsForStats.push(
+          `COALESCE((params->>'connected')::boolean, false) = false`
+        );
+      }
     }
     if (query.readStatus && query.readStatus !== "all") {
       if (query.readStatus === "read") {
@@ -197,9 +248,14 @@ export function createDataController({ pool }: Deps): Router {
            remark,
            heat_score AS "heatScore",
            extra,
+           params,
            track_data AS "trackData",
            last_track_at AS "lastTrackAt",
            track_count AS "trackCount",
+           EXISTS (
+             SELECT 1 FROM favorite_items fi WHERE fi.data_id = data_items.id
+           ) AS favorite,
+           (SELECT fi.list_id FROM favorite_items fi WHERE fi.data_id = data_items.id) AS "favoriteListId",
            created_at AS "createdAt"
          FROM data_items
          ${whereClause}
@@ -301,6 +357,100 @@ export function createDataController({ pool }: Deps): Router {
     }
   });
 
+  router.post("/favorite", async (req: Request, res: Response) => {
+    const body = req.body as ToggleFavoriteRequest;
+    try {
+      if (body.favorite) {
+        const listIdRaw = typeof (body as any).listId === "string" ? (body as any).listId.trim() : "";
+        const listNameRaw =
+          typeof (body as any).listName === "string" ? (body as any).listName.trim() : "";
+
+        let listId: string | null = listIdRaw || null;
+        if (!listId && listNameRaw) {
+          const existed = await pool.query<{ id: string }>(
+            `SELECT id FROM favorite_lists WHERE lower(name) = lower($1) LIMIT 1`,
+            [listNameRaw]
+          );
+          if (existed.rowCount && existed.rows[0]) {
+            listId = existed.rows[0].id;
+          } else {
+            const created = await pool.query<{ id: string }>(
+              `INSERT INTO favorite_lists (name) VALUES ($1) RETURNING id`,
+              [listNameRaw]
+            );
+            listId = created.rows[0].id;
+          }
+        }
+        if (!listId) {
+          const def = await pool.query<{ id: string }>(
+            `SELECT id FROM favorite_lists WHERE lower(name) = lower('默认') LIMIT 1`
+          );
+          listId = def.rowCount && def.rows[0] ? def.rows[0].id : null;
+        }
+
+        await pool.query(
+          `INSERT INTO favorite_items (data_id, list_id, updated_at)
+             VALUES ($1, $2::uuid, now())
+           ON CONFLICT (data_id) DO UPDATE
+                 SET list_id = EXCLUDED.list_id,
+                     updated_at = now()`,
+          [body.id, listId]
+        );
+      } else {
+        await pool.query(
+          `DELETE FROM favorite_items
+             WHERE data_id = $1`,
+          [body.id]
+        );
+      }
+      res.status(204).end();
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error("POST /web/data/favorite error", err);
+      res.status(500).json({ message: "Failed to update favorite status" });
+    }
+  });
+
+  // req0310: 联系状态切换（params.connected / params.connected_at）
+  router.post("/connected", async (req: Request, res: Response) => {
+    const body = req.body as { id?: string; connected?: boolean };
+    const id = String(body.id ?? "").trim();
+    const connected = body.connected === true;
+    if (!id) {
+      res.status(400).json({ message: "id required" });
+      return;
+    }
+    try {
+      if (connected) {
+        await pool.query(
+          `UPDATE data_items
+              SET params = jsonb_set(
+                           jsonb_set(COALESCE(params, '{}'::jsonb), '{connected}', 'true'::jsonb, true),
+                           '{connected_at}',
+                           to_jsonb(now()),
+                           true
+                         ),
+                  updated_at = now()
+            WHERE id = $1::uuid`,
+          [id]
+        );
+      } else {
+        await pool.query(
+          `UPDATE data_items
+              SET params = (COALESCE(params, '{}'::jsonb) - 'connected' - 'connected_at'),
+                  updated_at = now()
+            WHERE id = $1::uuid`,
+          [id]
+        );
+      }
+      res.status(204).end();
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error("POST /web/data/connected error", err);
+      res.status(500).json({ message: "Failed to update connected status" });
+    }
+  });
+
   // 将指定 channel 加入黑名单，并把对应数据全部标记为已读。
   // 目前只实现 Reddit：将 channel 视为 subreddit，写入 reddit_subreddit_blacklist，
   // 同时将 data_items 中 source='reddit' 且 channel=该值的记录标记为 read=true。
@@ -310,6 +460,7 @@ export function createDataController({ pool }: Deps): Router {
       const body = req.body as BlacklistChannelRequest;
       const source = (body.source ?? "").trim();
       const channel = (body.channel ?? "").trim();
+      const ruleId = typeof (body as any).ruleId === "string" ? (body as any).ruleId.trim() : "";
 
       if (!source || !channel) {
         res.status(400).json({ message: "source and channel are required" });
@@ -326,10 +477,10 @@ export function createDataController({ pool }: Deps): Router {
         // 1) 写入 reddit_subreddit_blacklist
         try {
           await pool.query(
-            `INSERT INTO reddit_subreddit_blacklist (name)
-             VALUES ($1)
-             ON CONFLICT (name) DO NOTHING`,
-            [channel]
+            `INSERT INTO reddit_subreddit_blacklist (rule_id, name)
+             VALUES (NULLIF($1, '')::uuid, $2)
+             ON CONFLICT DO NOTHING`,
+            [ruleId, channel]
           );
         } catch (e) {
           const pgErr = e as { code?: string };
@@ -337,9 +488,9 @@ export function createDataController({ pool }: Deps): Router {
           // 兼容旧库未加唯一约束的情况，降级为普通 INSERT（允许重复行）
           if (pgErr.code === "42P10") {
             await pool.query(
-              `INSERT INTO reddit_subreddit_blacklist (name)
-               VALUES ($1)`,
-              [channel]
+              `INSERT INTO reddit_subreddit_blacklist (rule_id, name)
+               VALUES (NULLIF($1, '')::uuid, $2)`,
+              [ruleId, channel]
             );
           } else {
             throw e;

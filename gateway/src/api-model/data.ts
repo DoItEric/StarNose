@@ -17,10 +17,16 @@ export interface DataRecord {
   remark?: string;
   heatScore: number; // 0-100
   extra?: Record<string, unknown>;
+  /** 自定义状态等扩展字段（req0310） */
+  params?: Record<string, unknown>;
   /** 跟踪数据 JSON，各数据源结构不同，如 reddit: { ups, num_comments } */
   trackData?: Record<string, unknown>;
   lastTrackAt?: string; // ISO UTC
   trackCount?: number;
+  /** 是否被收藏 */
+  favorite?: boolean;
+  /** 收藏所属列表 id（req0310） */
+  favoriteListId?: string | null;
 }
 
 export interface RuleUnreadStat {
@@ -35,9 +41,16 @@ export interface ListDataQuery {
   publishTimeTo?: string;
   sources?: string[];
   trackingOnly?: boolean;
+  favoriteOnly?: boolean;
+  /** 收藏列表筛选（req0310） */
+  favoriteListId?: string;
   readStatus?: "all" | "read" | "unread" | "ignored";
   keyword?: string;
   ruleId?: string;
+  /** channel 模糊查询（req0310） */
+  channel?: string;
+  /** 是否已联络（仅收藏页用，req0310） */
+  connected?: boolean;
   page?: number;
   pageSize?: number;
   sortBy?:
@@ -66,4 +79,14 @@ export interface MarkDataReadRequest {
 export interface BlacklistChannelRequest {
   source: string;
   channel: string;
+  /** 关联规则 id（req0310） */
+  ruleId?: string;
+}
+
+export interface ToggleFavoriteRequest {
+  id: string;
+  favorite: boolean;
+  /** 指定收藏列表（优先使用 id，其次 name 自动创建/匹配） */
+  listId?: string;
+  listName?: string;
 }
