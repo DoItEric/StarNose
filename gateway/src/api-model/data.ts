@@ -27,6 +27,8 @@ export interface DataRecord {
   favorite?: boolean;
   /** 收藏所属列表 id（req0310） */
   favoriteListId?: string | null;
+  /** 收藏所属列表名称（req0310） */
+  favoriteListName?: string | null;
 }
 
 export interface RuleUnreadStat {

@@ -230,34 +230,37 @@ export function createDataController({ pool }: Deps): Router {
 
       const dataResult = await pool.query(
         `SELECT
-           id,
-           rule_id AS "ruleId",
-           unique_key AS "uniqueKey",
-           source,
-           channel,
-           title,
-           content,
-           url,
-           keywords,
+           data_items.id,
+           data_items.rule_id AS "ruleId",
+           data_items.unique_key AS "uniqueKey",
+           data_items.source,
+           data_items.channel,
+           data_items.title,
+           data_items.content,
+           data_items.url,
+           data_items.keywords,
            EXISTS (SELECT 1 FROM tracking_items ti WHERE ti.data_id = data_items.id) AS tracking,
-           crawl_time AS "crawlTime",
-           publish_time AS "publishTime",
-           summary,
-           hot_words AS "hotWords",
-           read,
-           remark,
-           heat_score AS "heatScore",
-           extra,
-           params,
-           track_data AS "trackData",
-           last_track_at AS "lastTrackAt",
-           track_count AS "trackCount",
-           EXISTS (
-             SELECT 1 FROM favorite_items fi WHERE fi.data_id = data_items.id
-           ) AS favorite,
-           (SELECT fi.list_id FROM favorite_items fi WHERE fi.data_id = data_items.id) AS "favoriteListId",
-           created_at AS "createdAt"
+           data_items.crawl_time AS "crawlTime",
+           data_items.publish_time AS "publishTime",
+           data_items.summary,
+           data_items.hot_words AS "hotWords",
+           data_items.read,
+           data_items.remark,
+           data_items.heat_score AS "heatScore",
+           data_items.extra,
+           data_items.params,
+           data_items.track_data AS "trackData",
+           data_items.last_track_at AS "lastTrackAt",
+           data_items.track_count AS "trackCount",
+           (favorite_items.id IS NOT NULL) AS favorite,
+           favorite_items.list_id AS "favoriteListId",
+           favorite_lists.name AS "favoriteListName",
+           data_items.created_at AS "createdAt"
          FROM data_items
+         LEFT JOIN favorite_items
+           ON favorite_items.data_id = data_items.id
+         LEFT JOIN favorite_lists
+           ON favorite_lists.id = favorite_items.list_id
          ${whereClause}
          ${orderClause}
          LIMIT $${params.length - 1} OFFSET $${params.length}`,

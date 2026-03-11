@@ -227,6 +227,9 @@
               <a-tag :color="readStatusColor(item.read)">
                 {{ readStatusText(item.read) }}
               </a-tag>
+              <span v-if="item.favoriteListName" class="muted">
+                收藏列表：{{ item.favoriteListName }}
+              </span>
               <span class="muted">{{ item.source }}</span>
               <span class="muted">规则：{{ ruleNameMap[item.ruleId] ?? item.ruleId }}</span>
               <span v-if="item.channel" class="muted">频道：{{ item.channel }}</span>
@@ -386,6 +389,7 @@ interface DataItem {
   trackData?: Record<string, unknown>;
   favorite?: boolean;
   connected?: boolean;
+  favoriteListName?: string;
 }
 
 interface RuleTab {
@@ -422,6 +426,7 @@ const filtersVisible = ref(true);
 
 const columns = [
   { title: "规则 ID", dataIndex: "ruleId", key: "ruleId" },
+  { title: "收藏列表", dataIndex: "favoriteListName", key: "favoriteListName" },
   { title: "数据源", dataIndex: "source", key: "source" },
   { title: "Channel", dataIndex: "channel", key: "channel" },
   { title: "标题", dataIndex: "title", key: "title", ellipsis: true },
@@ -575,7 +580,8 @@ async function search(resetPage = false) {
     read: typeof r.read === "number" ? r.read : r.read ? 1 : 0,
     trackData: r.trackData,
     favorite: !!r.favorite,
-    connected: !!(r.params && (r.params.connected === true || r.params.connected === "true"))
+    connected: !!(r.params && (r.params.connected === true || r.params.connected === "true")),
+    favoriteListName: r.favoriteListName
   }));
   pagination.value.total = Number(resp.data.total ?? 0);
 
