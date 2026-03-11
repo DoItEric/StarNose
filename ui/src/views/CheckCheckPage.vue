@@ -70,8 +70,18 @@
         </div>
 
         <div v-if="currentItem.content" class="checkcheck-card__section checkcheck-card__section--content">
-          <div class="section-label">内容（翻译）</div>
-          <div class="section-content section-content--translated">
+          <div class="section-label">
+            内容（翻译）
+            <a-button
+              v-if="!contentVisible"
+              type="link"
+              size="small"
+              @click="showContent"
+            >
+              显示
+            </a-button>
+          </div>
+          <div v-if="contentVisible" class="section-content section-content--translated">
             <a-spin v-if="contentTranslateLoading" size="small" />
             <template v-else-if="contentTranslateError">
               <span class="content-fallback">{{ contentTranslateError }}</span>
@@ -242,6 +252,7 @@ const pagination = ref<{ page: number; pageSize: number; total: number }>({
 const currentIndex = ref(0);
 const ruleNameMap = ref<Record<string, string>>({});
 
+const contentVisible = ref(false);
 const contentTranslated = ref<string | null>(null);
 const contentTranslateLoading = ref(false);
 const contentTranslateError = ref<string | null>(null);
@@ -294,9 +305,16 @@ function applyContentTranslation(item: DataItem | null) {
     });
 }
 
-watch(currentItem, (item) => {
-  applyContentTranslation(item);
-}, { immediate: true });
+function showContent() {
+  contentVisible.value = true;
+  applyContentTranslation(currentItem.value);
+}
+
+watch(currentItem, () => {
+  contentVisible.value = false;
+  contentTranslated.value = null;
+  contentTranslateError.value = null;
+});
 
 function readStatusText(read: number): string {
   if (read === -1) return "忽略";
