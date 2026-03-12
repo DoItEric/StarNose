@@ -12,7 +12,7 @@ export interface DataRecord {
   crawlTime: string; // ISO UTC
   publishTime?: string; // ISO UTC
   summary?: string;
-  hotWords?: string;
+  attributes?: Record<string, unknown>;
   read: number; // 0=未阅, 1=已阅, -1=忽略
   remark?: string;
   heatScore: number; // 0-100
@@ -48,6 +48,8 @@ export interface ListDataQuery {
   favoriteListId?: string;
   readStatus?: "all" | "read" | "unread" | "ignored";
   keyword?: string;
+  /** attributes 模糊查询 */
+  attributesKeyword?: string;
   ruleId?: string;
   /** channel 模糊查询（req0310） */
   channel?: string;

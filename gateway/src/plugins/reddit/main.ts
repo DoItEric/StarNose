@@ -49,7 +49,7 @@ interface ValidateBody {
 interface ValidateResponse {
   passed: boolean;
   summary?: string;
-  hotword?: string;
+  attributes?: Record<string, unknown>;
 }
 
 interface DataRecordBody {
@@ -64,7 +64,7 @@ interface DataRecordBody {
   crawlTime: string;
   publishTime?: string;
   summary?: string;
-  hotWords?: string;
+  attributes?: Record<string, unknown>;
   read: boolean;
   remark?: string;
   heatScore: number;
@@ -143,10 +143,10 @@ async function fetchSubredditFilters(
 
 function getLogFilePath(): string {
   const baseDir = path.resolve(__dirname, "..");
-  const date = new Date().toISOString().slice(0, 10);
+  const dateHour = new Date().toISOString().slice(0, 13).replace("T", "-");
   const logDir = path.join(baseDir, "logs");
   fs.mkdirSync(logDir, { recursive: true });
-  return path.join(logDir, `reddit-${date}.log`);
+  return path.join(logDir, `reddit-${dateHour}.log`);
 }
 
 function writeLog(step: string, detail?: unknown): void {
@@ -389,7 +389,7 @@ export async function run(options: PluginRunOptions): Promise<PluginRunResult> {
       matchedKeywords: string[];
       passed: boolean;
       summary?: string;
-      hotword?: string;
+      attributes?: Record<string, unknown>;
     }
 
     const noLlmList: ValidateResult[] = [];
@@ -430,7 +430,7 @@ export async function run(options: PluginRunOptions): Promise<PluginRunResult> {
                   matchedKeywords: mk,
                   passed: res.data?.passed ?? false,
                   summary: res.data?.summary,
-                  hotword: res.data?.hotword
+                  attributes: res.data?.attributes
                 };
               } catch (err) {
                 // 某条校验请求失败时只记录日志并视为未通过，避免中断整个任务
@@ -462,12 +462,11 @@ export async function run(options: PluginRunOptions): Promise<PluginRunResult> {
     let savedCount = 0;
     let saveFailedCount = 0;
     writeLog("save_data_start", { toSave: passedList.length });
-    for (const { post, rule, summary, hotword, matchedKeywords: mk } of passedList) {
+    for (const { post, rule, summary, attributes, matchedKeywords: mk } of passedList) {
       const record: DataRecordBody = {
         ruleId: rule.id,
         uniqueKey: post.id,
         source: "reddit",
-        // 将 subreddit 写入通用 channel 字段
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         ...(post.subreddit ? ({ channel: post.subreddit } as any) : {}),
         title: title(post),
@@ -478,7 +477,7 @@ export async function run(options: PluginRunOptions): Promise<PluginRunResult> {
         crawlTime: new Date().toISOString(),
         publishTime: publishTimeFromUtc(post.created_utc ?? null),
         summary: summary ?? undefined,
-        hotWords: hotword ?? undefined,
+        attributes: attributes ?? undefined,
         read: false,
         heatScore: 0,
         extra: {
@@ -507,12 +506,11 @@ export async function run(options: PluginRunOptions): Promise<PluginRunResult> {
     let abandonSavedCount = 0;
     let abandonSaveFailedCount = 0;
     writeLog("save_abandon_data_start", { toSave: failedList.length });
-    for (const { post, rule, summary, hotword, matchedKeywords: mk } of failedList) {
+    for (const { post, rule, summary, attributes, matchedKeywords: mk } of failedList) {
       const record: DataRecordBody = {
         ruleId: rule.id,
         uniqueKey: post.id,
         source: "reddit",
-        // 将 subreddit 写入通用 channel 字段
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         ...(post.subreddit ? ({ channel: post.subreddit } as any) : {}),
         title: title(post),
@@ -523,7 +521,7 @@ export async function run(options: PluginRunOptions): Promise<PluginRunResult> {
         crawlTime: new Date().toISOString(),
         publishTime: publishTimeFromUtc(post.created_utc ?? null),
         summary: summary ?? undefined,
-        hotWords: hotword ?? undefined,
+        attributes: attributes ?? undefined,
         read: false,
         heatScore: 0,
         extra: {

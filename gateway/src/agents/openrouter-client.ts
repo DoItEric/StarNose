@@ -114,8 +114,8 @@ export async function callOpenRouter(
         response: { text, ...(reasoning != null && { reasoning }) },
         ...rest
       });
-      const date = new Date().toISOString().slice(0, 10);
-      const logPath = path.join(logOptions.logDir, `llm-${date}.log`);
+      const dateHour = new Date().toISOString().slice(0, 13).replace("T", "-");
+      const logPath = path.join(logOptions.logDir, `llm-${dateHour}.log`);
       fs.mkdirSync(logOptions.logDir, { recursive: true });
       fs.appendFileSync(logPath, line + "\n", "utf8");
     }
@@ -147,8 +147,8 @@ export async function callOpenRouter(
         error: { message: msg, ...(code != null && { code }) },
         ...rest
       });
-      const date = new Date().toISOString().slice(0, 10);
-      const logPath = path.join(logOptions.logDir, `llm-${date}.log`);
+      const dateHour = new Date().toISOString().slice(0, 13).replace("T", "-");
+      const logPath = path.join(logOptions.logDir, `llm-${dateHour}.log`);
       fs.mkdirSync(logOptions.logDir, { recursive: true });
       fs.appendFileSync(logPath, line + "\n", "utf8");
     }

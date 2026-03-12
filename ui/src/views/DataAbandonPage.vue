@@ -75,6 +75,13 @@
             style="width: 180px"
           />
         </a-form-item>
+        <a-form-item label="属性">
+          <a-input
+            v-model:value="filters.attributesKeyword"
+            placeholder="属性模糊搜索"
+            style="width: 180px"
+          />
+        </a-form-item>
         <a-form-item>
           <a-button type="primary" @click="() => search(true)">查询</a-button>
         </a-form-item>
@@ -212,8 +219,29 @@
               {{ item.summary }}
             </div>
 
-            <div v-if="item.hotWords" class="data-card__hotwords">
-              <span class="muted">热词：</span>{{ item.hotWords }}
+            <div v-if="hasAttributes(item)" class="data-card__attributes">
+              <template v-if="item.source === 'reddit'">
+                <div v-if="getAttr(item, 'industry')" class="attr-item">
+                  <span class="attr-label">行业：</span>{{ getAttr(item, 'industry') }}
+                </div>
+                <div v-if="getAttr(item, 'persona')" class="attr-item">
+                  <span class="attr-label">角色：</span>{{ getAttr(item, 'persona') }}
+                </div>
+                <div v-if="getAttr(item, 'issue')" class="attr-item">
+                  <span class="attr-label">问题：</span>{{ getAttr(item, 'issue') }}
+                </div>
+                <div v-if="getAttr(item, 'phase')" class="attr-item">
+                  <span class="attr-label">环节：</span>{{ getAttr(item, 'phase') }}
+                </div>
+                <div v-if="getAttr(item, 'scene')" class="attr-item">
+                  <span class="attr-label">场景：</span>{{ getAttr(item, 'scene') }}
+                </div>
+              </template>
+              <template v-else>
+                <div v-for="(val, key) in item.attributes" :key="key" class="attr-item">
+                  <span class="attr-label">{{ key }}：</span>{{ val }}
+                </div>
+              </template>
             </div>
 
             <div v-if="item.keywords?.length" class="data-card__keywords">
@@ -319,7 +347,7 @@ interface DataItem {
   crawlTime: string;
   publishTime?: string;
   summary?: string;
-  hotWords?: string;
+  attributes?: Record<string, unknown>;
   read: number;
   trackData?: Record<string, unknown>;
 }
@@ -337,13 +365,15 @@ const filters = ref<{
   readStatus: "all" | "read" | "unread" | "ignored";
   keyword: string;
   channel: string;
+  attributesKeyword: string;
 }>({
   crawlRange: null,
   publishRange: null,
   plugins: [],
   readStatus: "unread",
   keyword: "",
-  channel: ""
+  channel: "",
+  attributesKeyword: ""
 });
 
 const filtersVisible = ref(true);
@@ -354,7 +384,7 @@ const columns = [
   { title: "Channel", dataIndex: "channel", key: "channel" },
   { title: "标题", dataIndex: "title", key: "title", ellipsis: true },
   { title: "描述", dataIndex: "summary", key: "summary", ellipsis: true },
-  { title: "热词", dataIndex: "hotWords", key: "hotWords", ellipsis: true },
+  { title: "属性", dataIndex: "attributes", key: "attributes", ellipsis: true },
   {
     title: "关键字",
     dataIndex: "keywords",
@@ -417,6 +447,9 @@ async function search(resetPage = false) {
   if (filters.value.channel) {
     params.channel = filters.value.channel;
   }
+  if (filters.value.attributesKeyword) {
+    params.attributesKeyword = filters.value.attributesKeyword;
+  }
   if (activeRuleId.value) {
     params.ruleId = activeRuleId.value;
   }
@@ -440,7 +473,7 @@ async function search(resetPage = false) {
     crawlTime: r.crawlTime,
     publishTime: r.publishTime,
     summary: r.summary,
-    hotWords: r.hotWords,
+    attributes: r.attributes,
     read: typeof r.read === "number" ? r.read : r.read ? 1 : 0,
     trackData: r.trackData
   }));
@@ -485,6 +518,13 @@ function readStatusColor(read: number): string {
   if (read === -1) return "default";
   if (read === 1) return "green";
   return "blue";
+}
+function hasAttributes(item: DataItem): boolean {
+  return !!item.attributes && typeof item.attributes === "object" && Object.keys(item.attributes).length > 0;
+}
+function getAttr(item: DataItem, key: string): string {
+  const v = item.attributes?.[key];
+  return typeof v === "string" ? v : v != null ? String(v) : "";
 }
 function formatTrackData(record: DataItem): string {
   const d = record.trackData;
@@ -677,11 +717,20 @@ onMounted(() => {
   margin: 8px 0;
 }
 
-.data-card__hotwords {
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
+.data-card__attributes {
   margin: 8px 0;
   font-size: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+}
+
+.attr-item {
+  line-height: 1.6;
+}
+
+.attr-label {
+  color: rgba(0, 0, 0, 0.45);
 }
 
 .data-card__keywords {

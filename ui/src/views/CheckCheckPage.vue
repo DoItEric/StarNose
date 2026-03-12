@@ -95,10 +95,31 @@
           </div>
         </div>
 
-        <div v-if="currentItem.hotWords" class="checkcheck-card__section">
-          <div class="section-label">热词</div>
-          <div class="section-content">
-            {{ currentItem.hotWords }}
+        <div v-if="hasAttributes(currentItem)" class="checkcheck-card__section">
+          <div class="section-label">属性</div>
+          <div class="section-content checkcheck-attributes">
+            <template v-if="currentItem.source === 'reddit'">
+              <div v-if="getAttr(currentItem, 'industry')" class="attr-item">
+                <span class="attr-label">行业：</span>{{ getAttr(currentItem, 'industry') }}
+              </div>
+              <div v-if="getAttr(currentItem, 'persona')" class="attr-item">
+                <span class="attr-label">角色：</span>{{ getAttr(currentItem, 'persona') }}
+              </div>
+              <div v-if="getAttr(currentItem, 'issue')" class="attr-item">
+                <span class="attr-label">问题：</span>{{ getAttr(currentItem, 'issue') }}
+              </div>
+              <div v-if="getAttr(currentItem, 'phase')" class="attr-item">
+                <span class="attr-label">环节：</span>{{ getAttr(currentItem, 'phase') }}
+              </div>
+              <div v-if="getAttr(currentItem, 'scene')" class="attr-item">
+                <span class="attr-label">场景：</span>{{ getAttr(currentItem, 'scene') }}
+              </div>
+            </template>
+            <template v-else>
+              <div v-for="(val, key) in currentItem.attributes" :key="key" class="attr-item">
+                <span class="attr-label">{{ key }}：</span>{{ val }}
+              </div>
+            </template>
           </div>
         </div>
 
@@ -235,7 +256,7 @@ interface DataItem {
   crawlTime: string;
   publishTime?: string;
   summary?: string;
-  hotWords?: string;
+  attributes?: Record<string, unknown>;
   read: number;
   trackData?: Record<string, unknown>;
   favorite?: boolean;
@@ -325,6 +346,13 @@ function readStatusColor(read: number): string {
   if (read === -1) return "default";
   if (read === 1) return "green";
   return "blue";
+}
+function hasAttributes(item: DataItem): boolean {
+  return !!item.attributes && typeof item.attributes === "object" && Object.keys(item.attributes).length > 0;
+}
+function getAttr(item: DataItem, key: string): string {
+  const v = item.attributes?.[key];
+  return typeof v === "string" ? v : v != null ? String(v) : "";
 }
 function formatTrackData(record: DataItem): string {
   const d = record.trackData;
@@ -442,7 +470,7 @@ async function fetchPage(page: number) {
       crawlTime: r.crawlTime,
       publishTime: r.publishTime,
       summary: r.summary,
-      hotWords: r.hotWords,
+      attributes: r.attributes,
       read: typeof r.read === "number" ? r.read : r.read ? 1 : 0,
       trackData: r.trackData,
       favorite: !!r.favorite,
@@ -736,6 +764,27 @@ onMounted(() => {
 
 .connected-icon--active {
   color: #52c41a;
+}
+
+.checkcheck-attributes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+}
+
+.attr-item {
+  line-height: 1.6;
+}
+
+.attr-label {
+  color: rgba(0, 0, 0, 0.45);
+}
+
+@media (max-width: 480px) {
+  .checkcheck-attributes {
+    flex-direction: column;
+    gap: 2px;
+  }
 }
 </style>
 

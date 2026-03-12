@@ -172,6 +172,16 @@ export function createDataController({ pool }: Deps): Router {
         `(title ILIKE $${paramsForStats.length - 1} OR content ILIKE $${paramsForStats.length})`
       );
     }
+    const attributesKeyword = typeof (query as any).attributesKeyword === "string"
+      ? String((query as any).attributesKeyword).trim()
+      : "";
+    if (attributesKeyword) {
+      params.push(`%${attributesKeyword}%`);
+      conditions.push(`attributes::text ILIKE $${params.length}`);
+
+      paramsForStats.push(`%${attributesKeyword}%`);
+      conditionsForStats.push(`attributes::text ILIKE $${paramsForStats.length}`);
+    }
     if (query.ruleId) {
       params.push(query.ruleId);
       conditions.push(`rule_id = $${params.length}`);
@@ -243,7 +253,7 @@ export function createDataController({ pool }: Deps): Router {
            data_items.crawl_time AS "crawlTime",
            data_items.publish_time AS "publishTime",
            data_items.summary,
-           data_items.hot_words AS "hotWords",
+           data_items.attributes,
            data_items.read,
            data_items.remark,
            data_items.heat_score AS "heatScore",
@@ -341,7 +351,7 @@ export function createDataController({ pool }: Deps): Router {
           ? 1
           : body.read === false || body.read === 0
             ? 0
-            : body.read === -1 || body.read === "-1"
+            : body.read === -1 
               ? -1
               : Number(body.read);
       const normalized = Number.isFinite(readVal) ? readVal : 0;

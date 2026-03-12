@@ -31,10 +31,10 @@ interface RedditPostData {
 
 function getLogFilePath(): string {
   const baseDir = path.resolve(__dirname, "..");
-  const date = new Date().toISOString().slice(0, 10);
+  const dateHour = new Date().toISOString().slice(0, 13).replace("T", "-");
   const logDir = path.join(baseDir, "logs");
   fs.mkdirSync(logDir, { recursive: true });
-  return path.join(logDir, `reddit_track-${date}.log`);
+  return path.join(logDir, `reddit_track-${dateHour}.log`);
 }
 
 function writeLog(step: string, detail?: unknown): void {

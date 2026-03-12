@@ -38,7 +38,7 @@ export function createDataApi({ pool }: Deps): Router {
            crawl_time,
            publish_time,
            summary,
-           hot_words,
+           attributes,
            read,
            remark,
            heat_score,
@@ -49,7 +49,7 @@ export function createDataApi({ pool }: Deps): Router {
            $10,
            $11,
            $12,
-           $13,
+           COALESCE($13,'{}'::jsonb),
            $14,
            $15,
            COALESCE($16,0),
@@ -65,7 +65,7 @@ export function createDataApi({ pool }: Deps): Router {
            crawl_time = EXCLUDED.crawl_time,
            publish_time = EXCLUDED.publish_time,
            summary = EXCLUDED.summary,
-           hot_words = EXCLUDED.hot_words,
+           attributes = EXCLUDED.attributes,
            read = EXCLUDED.read,
            remark = EXCLUDED.remark,
            heat_score = EXCLUDED.heat_score,
@@ -75,8 +75,6 @@ export function createDataApi({ pool }: Deps): Router {
           body.ruleId, // $1
           body.uniqueKey, // $2
           body.source, // $3
-          // 通用 channel 字段，如 subreddit / topic 等，暂时由各插件自行决定是否传入
-          // Reddit 插件会写入 subreddit
           (body as any).channel ?? null, // $4
           body.title, // $5
           body.content, // $6
@@ -86,7 +84,7 @@ export function createDataApi({ pool }: Deps): Router {
           body.crawlTime, // $10
           body.publishTime ?? null, // $11
           body.summary ?? null, // $12
-          body.hotWords ?? null, // $13
+          body.attributes ? JSON.stringify(body.attributes) : "{}", // $13
           readVal, // $14
           body.remark ?? null, // $15
           body.heatScore ?? 0, // $16
@@ -128,7 +126,7 @@ export function createDataApi({ pool }: Deps): Router {
            crawl_time,
            publish_time,
            summary,
-           hot_words,
+           attributes,
            read,
            remark,
            heat_score,
@@ -139,7 +137,7 @@ export function createDataApi({ pool }: Deps): Router {
            $10,
            $11,
            $12,
-           $13,
+           COALESCE($13,'{}'::jsonb),
            $14,
            $15,
            COALESCE($16,0),
@@ -155,7 +153,7 @@ export function createDataApi({ pool }: Deps): Router {
            crawl_time = EXCLUDED.crawl_time,
            publish_time = EXCLUDED.publish_time,
            summary = EXCLUDED.summary,
-           hot_words = EXCLUDED.hot_words,
+           attributes = EXCLUDED.attributes,
            read = EXCLUDED.read,
            remark = EXCLUDED.remark,
            heat_score = EXCLUDED.heat_score,
@@ -174,7 +172,7 @@ export function createDataApi({ pool }: Deps): Router {
           body.crawlTime, // $10
           body.publishTime ?? null, // $11
           body.summary ?? null, // $12
-          body.hotWords ?? null, // $13
+          body.attributes ? JSON.stringify(body.attributes) : "{}", // $13
           readVal, // $14
           body.remark ?? null, // $15
           body.heatScore ?? 0, // $16

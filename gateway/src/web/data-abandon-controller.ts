@@ -128,6 +128,16 @@ export function createDataAbandonController({ pool }: Deps): Router {
         `(title ILIKE $${paramsForStats.length - 1} OR content ILIKE $${paramsForStats.length})`
       );
     }
+    const attributesKeyword = typeof (query as any).attributesKeyword === "string"
+      ? String((query as any).attributesKeyword).trim()
+      : "";
+    if (attributesKeyword) {
+      params.push(`%${attributesKeyword}%`);
+      conditions.push(`attributes::text ILIKE $${params.length}`);
+
+      paramsForStats.push(`%${attributesKeyword}%`);
+      conditionsForStats.push(`attributes::text ILIKE $${paramsForStats.length}`);
+    }
     if (query.ruleId) {
       params.push(query.ruleId);
       conditions.push(`rule_id = $${params.length}`);
@@ -199,7 +209,7 @@ export function createDataAbandonController({ pool }: Deps): Router {
            crawl_time AS "crawlTime",
            publish_time AS "publishTime",
            summary,
-           hot_words AS "hotWords",
+           attributes,
            read,
            remark,
            heat_score AS "heatScore",

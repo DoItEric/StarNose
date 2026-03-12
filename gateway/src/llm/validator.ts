@@ -11,23 +11,18 @@ const JSON_MATCH_RE = /\{[\s\S]*"match"[\s\S]*\}/;
 function parseValidateJson(raw: string): {
   match: boolean;
   summary?: string;
-  hotword?: string;
+  attributes?: Record<string, unknown>;
 } {
   const trimmed = raw.trim();
   const jsonStr = trimmed.replace(/^```\w*\n?|```\s*$/g, "").trim();
   const m = jsonStr.match(JSON_MATCH_RE);
   if (!m) return { match: false };
   try {
-    const o = JSON.parse(m[0]) as {
-      match?: boolean;
-      summary?: string;
-      hotword?: string;
-    };
-    return {
-      match: Boolean(o.match),
-      summary: typeof o.summary === "string" ? o.summary : undefined,
-      hotword: typeof o.hotword === "string" ? o.hotword : undefined
-    };
+    const o = JSON.parse(m[0]) as Record<string, unknown>;
+    const matched = Boolean(o.match);
+    const summary = typeof o.summary === "string" ? o.summary : undefined;
+    const { match: _m, ...rest } = o;
+    return { match: matched, summary, attributes: Object.keys(rest).length > 0 ? rest : undefined };
   } catch {
     return { match: false };
   }
@@ -88,7 +83,7 @@ export async function validateContentWithLLM(
     return {
       passed: parsed.match,
       summary: parsed.summary,
-      hotword: parsed.hotword
+      attributes: parsed.attributes
     };
   }
 
