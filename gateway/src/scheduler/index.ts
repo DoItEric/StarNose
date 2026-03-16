@@ -3,6 +3,10 @@ import fs from "node:fs";
 import path from "node:path";
 import type { Pool } from "pg";
 import type { PluginRegistry } from "../plugin-registry/types";
+import {
+  getShanghaiISOString,
+  getShanghaiDate
+} from "../utils/time";
 
 interface Deps {
   pool: Pool;
@@ -49,7 +53,7 @@ function matchesCronExpression(expr: string, date: Date): boolean {
 }
 
 function getSchedulerLogFilePath(logDir: string): string {
-  const date = new Date().toISOString().slice(0, 10);
+  const date = getShanghaiDate();
   const dir = path.resolve(logDir);
   fs.mkdirSync(dir, { recursive: true });
   return path.join(dir, `scheduler-${date}.log`);
@@ -63,7 +67,7 @@ function writeSchedulerLog(
   try {
     const logPath = getSchedulerLogFilePath(logDir);
     const line = JSON.stringify({
-      ts: new Date().toISOString(),
+      ts: getShanghaiISOString(),
       step,
       detail
     });
@@ -180,8 +184,8 @@ export function initScheduler({
               );
               pluginId = inserted.rows[0].id as string;
             }
-            const startedAt = new Date().toISOString();
-            const finishedAt = new Date().toISOString();
+            const startedAt = getShanghaiISOString();
+            const finishedAt = getShanghaiISOString();
             await pool.query(
               `INSERT INTO plugin_runs (
                  plugin_id, started_at, finished_at, success, total_count, matched_count

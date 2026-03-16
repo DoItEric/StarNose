@@ -2,6 +2,7 @@ import axios, { type AxiosInstance } from "axios";
 import fs from "node:fs";
 import path from "node:path";
 import { config } from "./config";
+import { getShanghaiISOString, getShanghaiDateHour } from "../../utils/time";
 
 /** 主程序调用时传入 */
 export interface PluginRunOptions {
@@ -31,7 +32,7 @@ interface RedditPostData {
 
 function getLogFilePath(): string {
   const baseDir = path.resolve(__dirname, "..");
-  const dateHour = new Date().toISOString().slice(0, 13).replace("T", "-");
+  const dateHour = getShanghaiDateHour();
   const logDir = path.join(baseDir, "logs");
   fs.mkdirSync(logDir, { recursive: true });
   return path.join(logDir, `reddit_track-${dateHour}.log`);
@@ -40,7 +41,7 @@ function getLogFilePath(): string {
 function writeLog(step: string, detail?: unknown): void {
   try {
     const line = JSON.stringify({
-      ts: new Date().toISOString(),
+      ts: getShanghaiISOString(),
       step,
       detail
     });

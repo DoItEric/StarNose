@@ -3,6 +3,7 @@ import express from "express";
 import type { Pool } from "pg";
 import type { PluginRegistry } from "../plugin-registry/types";
 import type { PluginHistoryItem, PluginScheduleConfig } from "../api-model";
+import { getShanghaiISOString } from "../utils/time";
 
 interface Deps {
   pool: Pool;
@@ -179,7 +180,7 @@ export function createPluginsController({ pool, pluginRegistry }: Deps): Router 
         const gatewayUrl =
           process.env.GATEWAY_URL ||
           `http://127.0.0.1:${process.env.PORT || 3000}`;
-        const startedAt = new Date().toISOString();
+        const startedAt = getShanghaiISOString();
 
         const runPlugin = pluginRegistry.runPlugin;
         if (!runPlugin) {
@@ -190,7 +191,7 @@ export function createPluginsController({ pool, pluginRegistry }: Deps): Router 
           gatewayUrl,
           pluginKey
         });
-        const finishedAt = new Date().toISOString();
+        const finishedAt = getShanghaiISOString();
 
         await pool.query(
           `INSERT INTO plugin_runs (

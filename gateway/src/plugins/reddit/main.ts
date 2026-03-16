@@ -3,6 +3,12 @@ import fs from "node:fs";
 import path from "node:path";
 import { config } from "./config";
 import { parseKeywordRules, ruleMatches } from "./keywords";
+import { getShanghaiISOString } from "../../utils/time";
+import {
+  isPostInProcessing,
+  addPostToProcessing,
+  removePostFromProcessing
+} from "./redis-queue";
 
 /** 主程序调用时传入，与 starnose-api-model PluginRunOptions 一致 */
 export interface PluginRunOptions {
@@ -71,12 +77,6 @@ interface DataRecordBody {
   extra?: Record<string, unknown>;
 }
 
-/** 当前时间 ISO 字符串（上海时区 Asia/Shanghai） */
-function getShanghaiISOString(): string {
-  const s = new Date().toLocaleString("sv-SE", { timeZone: "Asia/Shanghai" });
-  return s.replace(" ", "T") + "+08:00";
-}
-
 async function fetchSubredditBlacklist(
   client: AxiosInstance
 ): Promise<Set<string>> {
@@ -143,7 +143,7 @@ async function fetchSubredditFilters(
 
 function getLogFilePath(): string {
   const baseDir = path.resolve(__dirname, "..");
-  const dateHour = new Date().toISOString().slice(0, 13).replace("T", "-");
+  const dateHour = getShanghaiISOString().slice(0, 13).replace("T", "-");
   const logDir = path.join(baseDir, "logs");
   fs.mkdirSync(logDir, { recursive: true });
   return path.join(logDir, `reddit-${dateHour}.log`);
@@ -271,6 +271,7 @@ export async function run(options: PluginRunOptions): Promise<PluginRunResult> {
     }
 
     const toMarkProcessed = new Set<string>();
+    const processingIds = new Set<string>();
     const emptyContentIds: string[] = [];
     const noMatchIds: string[] = [];
     const candidateList: {
@@ -293,6 +294,22 @@ export async function run(options: PluginRunOptions): Promise<PluginRunResult> {
       parseKeywordRules(r.negativeKeywords ?? [])
     );
     for (const post of posts) {
+      const uniqueId = post.id;
+      try {
+        const inProcessing = await isPostInProcessing(uniqueId);
+        if (inProcessing) {
+          writeLog("skip_in_processing", { postId: uniqueId });
+          continue;
+        }
+        await addPostToProcessing(uniqueId);
+        processingIds.add(uniqueId);
+      } catch (err) {
+        writeLog("redis_processing_error", {
+          postId: uniqueId,
+          error: axiosErrorToDetail(err)
+        });
+      }
+
       const subLower = (post.subreddit ?? "").toLowerCase();
       if (content(post).trim() === "") {
         emptyContentIds.push(post.id);
@@ -371,9 +388,27 @@ export async function run(options: PluginRunOptions): Promise<PluginRunResult> {
 
     if (finalCandidateList.length === 0) {
       if (toMarkProcessed.size > 0) {
-        await client.post("/api/reddit/posts/mark-processed", {
-          ids: Array.from(toMarkProcessed)
-        });
+        try {
+          await client.post("/api/reddit/posts/mark-processed", {
+            ids: Array.from(toMarkProcessed)
+          });
+          // posts 表状态更新完成后，清理 redis 中对应的处理标记
+          for (const id of processingIds) {
+            try {
+              await removePostFromProcessing(id);
+            } catch (err) {
+              writeLog("redis_remove_error", {
+                postId: id,
+                error: axiosErrorToDetail(err)
+              });
+            }
+          }
+        } catch (err) {
+          writeLog("mark_processed_error", {
+            count: toMarkProcessed.size,
+            error: axiosErrorToDetail(err)
+          });
+        }
       }
       writeLog("success", { reason: "no_candidates" });
       return {
@@ -423,6 +458,10 @@ export async function run(options: PluginRunOptions): Promise<PluginRunResult> {
                 withSummary: true
               };
               try {
+                writeLog("validate_start", {
+                  ruleId: rule.id,
+                  postId: post.id
+                });
                 const res = await client.post<ValidateResponse>("/api/validate", body);
                 return {
                   post,
@@ -552,6 +591,17 @@ export async function run(options: PluginRunOptions): Promise<PluginRunResult> {
         await client.post("/api/reddit/posts/mark-processed", {
           ids: Array.from(toMarkProcessed)
         });
+        // posts 表状态更新完成后，清理 redis 中对应的处理标记
+        for (const id of processingIds) {
+          try {
+            await removePostFromProcessing(id);
+          } catch (err) {
+            writeLog("redis_remove_error", {
+              postId: id,
+              error: axiosErrorToDetail(err)
+            });
+          }
+        }
       } catch (err) {
         writeLog("mark_processed_error", {
           count: toMarkProcessed.size,

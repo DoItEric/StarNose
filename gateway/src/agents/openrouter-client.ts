@@ -2,6 +2,7 @@ import axios from "axios";
 import fs from "node:fs";
 import path from "node:path";
 import { HttpsProxyAgent } from "https-proxy-agent";
+import { getShanghaiISOString, getShanghaiDateHour } from "../utils/time";
 
 const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1/chat/completions";
 
@@ -104,7 +105,7 @@ export async function callOpenRouter(
         ...(requestExtra ?? {})
       };
       const line = JSON.stringify({
-        ts: new Date().toISOString(),
+        ts: getShanghaiISOString(),
         scene,
         provider: "openrouter",
         model,
@@ -114,7 +115,7 @@ export async function callOpenRouter(
         response: { text, ...(reasoning != null && { reasoning }) },
         ...rest
       });
-      const dateHour = new Date().toISOString().slice(0, 13).replace("T", "-");
+      const dateHour = getShanghaiDateHour();
       const logPath = path.join(logOptions.logDir, `llm-${dateHour}.log`);
       fs.mkdirSync(logOptions.logDir, { recursive: true });
       fs.appendFileSync(logPath, line + "\n", "utf8");
@@ -139,7 +140,7 @@ export async function callOpenRouter(
       const { requestExtra: _ro, ...rest } = logContext as { requestExtra?: Record<string, unknown>; [k: string]: unknown };
       const kind = (rest.kind as string) ?? "call";
       const line = JSON.stringify({
-        ts: new Date().toISOString(),
+        ts: getShanghaiISOString(),
         kind: `${kind}_error`,
         scene,
         provider: "openrouter",
@@ -147,7 +148,7 @@ export async function callOpenRouter(
         error: { message: msg, ...(code != null && { code }) },
         ...rest
       });
-      const dateHour = new Date().toISOString().slice(0, 13).replace("T", "-");
+      const dateHour = getShanghaiDateHour();
       const logPath = path.join(logOptions.logDir, `llm-${dateHour}.log`);
       fs.mkdirSync(logOptions.logDir, { recursive: true });
       fs.appendFileSync(logPath, line + "\n", "utf8");
