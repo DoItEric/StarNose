@@ -349,6 +349,18 @@ export async function run(options: PluginRunOptions): Promise<PluginRunResult> {
               content(post)
             )
           ) {
+            const matchedNegative = matchedKeywords(
+              rule.negativeKeywords ?? [],
+              title(post),
+              content(post)
+            );
+            writeLog("negative_keywords_matched_skip", {
+              ruleId: rule.id,
+              postId: post.id,
+              matchedNegativeKeywords: matchedNegative,
+              title: title(post),
+              content: content(post)
+            });
             continue;
           }
           candidateList.push({
