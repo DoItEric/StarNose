@@ -77,6 +77,12 @@ interface DataRecordBody {
   extra?: Record<string, unknown>;
 }
 
+function generateRunId(): string {
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+}
+
+let currentRunId: string | null = null;
+
 async function fetchSubredditBlacklist(
   client: AxiosInstance
 ): Promise<Set<string>> {
@@ -154,6 +160,7 @@ function writeLog(step: string, detail?: unknown): void {
     const logPath = getLogFilePath();
     const line = JSON.stringify({
       ts: getShanghaiISOString(),
+      runId: currentRunId,
       step,
       detail
     });
@@ -236,6 +243,7 @@ function publishTimeFromUtc(created_utc: number | null): string | undefined {
  * 插件主逻辑，由主程序（gateway）在同一进程内调用。
  */
 export async function run(options: PluginRunOptions): Promise<PluginRunResult> {
+  currentRunId = generateRunId();
   const gatewayUrl = options.gatewayUrl;
   const pluginKey = options.pluginKey;
   const llmConcurrency = config.llmConcurrency;
@@ -627,5 +635,7 @@ export async function run(options: PluginRunOptions): Promise<PluginRunResult> {
     // eslint-disable-next-line no-console
     console.error("reddit plugin error", msg);
     return { success: false, totalCount: 0, matchedCount: 0 };
+  } finally {
+    currentRunId = null;
   }
 }

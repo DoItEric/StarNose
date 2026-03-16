@@ -30,6 +30,12 @@ interface RedditPostData {
   num_comments?: number;
 }
 
+function generateRunId(): string {
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+}
+
+let currentRunId: string | null = null;
+
 function getLogFilePath(): string {
   const baseDir = path.resolve(__dirname, "..");
   const dateHour = getShanghaiDateHour();
@@ -42,6 +48,7 @@ function writeLog(step: string, detail?: unknown): void {
   try {
     const line = JSON.stringify({
       ts: getShanghaiISOString(),
+      runId: currentRunId,
       step,
       detail
     });
@@ -129,6 +136,7 @@ async function fetchRedditPostsInfo(
 export async function run(
   options: PluginRunOptions
 ): Promise<PluginRunResult> {
+  currentRunId = generateRunId();
   const gatewayUrl = options.gatewayUrl ?? config.gatewayUrl;
   const client: AxiosInstance = axios.create({
     baseURL: gatewayUrl,
@@ -192,5 +200,7 @@ export async function run(
     // eslint-disable-next-line no-console
     console.error("reddit_track plugin error", msg);
     return { success: false, totalCount: 0, matchedCount: 0 };
+  } finally {
+    currentRunId = null;
   }
 }
