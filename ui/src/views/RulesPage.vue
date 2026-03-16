@@ -1,16 +1,18 @@
 <template>
-  <div>
+  <div class="rules-page">
     <div class="page-header">
       <h2>规则</h2>
       <a-button type="primary" @click="openCreate">新增规则</a-button>
     </div>
 
-    <a-table
-      :columns="columns"
-      :data-source="rules"
-      :pagination="{ pageSize: 20 }"
-      row-key="id"
-    >
+    <div ref="tableWrapperRef" class="table-wrapper">
+      <a-table
+        :columns="columns"
+        :data-source="rules"
+        :pagination="{ pageSize: 100 }"
+        :scroll="{ y: tableScrollY }"
+        row-key="id"
+      >
       <template #bodyCell="{ column, record, text }">
         <template v-if="column.key === 'name' || column.key === 'keywordDescription' || column.key === 'description' || column.key === 'promptFile'">
           <span class="table-cell-ellipsis" :title="text">{{ text ?? "" }}</span>
@@ -43,6 +45,7 @@
         </template>
       </template>
     </a-table>
+    </div>
 
     <a-modal
       v-model:open="createVisible"
@@ -159,12 +162,10 @@
                         <a-pagination
                           v-if="filteredKeywords.length > pageSize"
                           v-model:current="keywordPage"
-                          v-model:page-size="pageSize"
+                          :page-size="pageSize"
                           :total="filteredKeywords.length"
                           size="small"
-                          show-size-changer
-                          :page-size-options="['10', '20', '50']"
-                          show-total
+                          simple
                           class="keyword-pagination"
                         />
                         <div class="keyword-add-row">
@@ -213,12 +214,10 @@
                         <a-pagination
                           v-if="filteredNegativeKeywords.length > negativePageSize"
                           v-model:current="negativeKeywordPage"
-                          v-model:page-size="negativePageSize"
+                          :page-size="negativePageSize"
                           :total="filteredNegativeKeywords.length"
                           size="small"
-                          show-size-changer
-                          :page-size-options="['10', '20', '50']"
-                          show-total
+                          simple
                           class="keyword-pagination"
                         />
                         <div class="keyword-add-row">
@@ -273,12 +272,10 @@
                         <a-pagination
                           v-if="filteredWhitelist.length > whitelistPageSize"
                           v-model:current="whitelistPage"
-                          v-model:page-size="whitelistPageSize"
+                          :page-size="whitelistPageSize"
                           :total="filteredWhitelist.length"
                           size="small"
-                          show-size-changer
-                          :page-size-options="['10', '20', '50']"
-                          show-total
+                          simple
                           class="keyword-pagination"
                         />
                         <div class="keyword-add-row">
@@ -327,12 +324,10 @@
                         <a-pagination
                           v-if="filteredBlacklist.length > blacklistPageSize"
                           v-model:current="blacklistPage"
-                          v-model:page-size="blacklistPageSize"
+                          :page-size="blacklistPageSize"
                           :total="filteredBlacklist.length"
                           size="small"
-                          show-size-changer
-                          :page-size-options="['10', '20', '50']"
-                          show-total
+                          simple
                           class="keyword-pagination"
                         />
                         <div class="keyword-add-row">
@@ -354,9 +349,8 @@
           </a-tabs>
         </div>
         <div class="rules-modal-footer">
-          <a-button @click="closeCreate">取消</a-button>
-          <a-button @click="submitRuleAndContinue">保存并继续</a-button>
-          <a-button type="primary" @click="submitRule">保存</a-button>
+          <a-button @click="submitRuleAndContinue">保存</a-button>
+          <a-button type="primary" @click="() => submitRule(false)">保存并关闭</a-button>
         </div>
       </div>
     </a-modal>
@@ -364,7 +358,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, nextTick } from "vue";
+import { ref, computed, onMounted, onBeforeUnmount, nextTick } from "vue";
 import { http } from "@/api/http";
 
 interface RuleItem {
@@ -449,6 +443,18 @@ const columns = [
 ];
 
 const rules = ref<RuleItem[]>([]);
+const tableWrapperRef = ref<HTMLElement | null>(null);
+const tableScrollY = ref(400);
+let resizeObserver: ResizeObserver | null = null;
+
+function updateTableHeight() {
+  if (!tableWrapperRef.value) return;
+  const wrapperHeight = tableWrapperRef.value.clientHeight;
+  const TABLE_HEADER = 55;
+  const PAGINATION_BAR = 56;
+  tableScrollY.value = Math.max(wrapperHeight - TABLE_HEADER - PAGINATION_BAR, 200);
+}
+
 const createVisible = ref(false);
 const editId = ref<string | null>(null);
 const activeTab = ref("keywords");
@@ -472,22 +478,22 @@ const generateLoading = ref(false);
 const supplementLoading = ref(false);
 const keywordSearch = ref("");
 const keywordPage = ref(1);
-const pageSize = ref(20);
+const pageSize = ref(100);
 const addKeywordInput = ref("");
 const keywordListRef = ref<HTMLElement | null>(null);
 
 const negativeKeywordSearch = ref("");
 const negativeKeywordPage = ref(1);
-const negativePageSize = ref(10);
+const negativePageSize = ref(100);
 const addNegativeKeywordInput = ref("");
 
 const whitelistSearch = ref("");
 const whitelistPage = ref(1);
-const whitelistPageSize = ref(10);
+const whitelistPageSize = ref(100);
 
 const blacklistSearch = ref("");
 const blacklistPage = ref(1);
-const blacklistPageSize = ref(10);
+const blacklistPageSize = ref(100);
 
 const originalWhitelist = ref<string[]>([]);
 const originalBlacklist = ref<string[]>([]);
@@ -595,6 +601,15 @@ async function loadRules() {
 onMounted(() => {
   void loadRules();
   void loadPlugins();
+  updateTableHeight();
+  resizeObserver = new ResizeObserver(() => updateTableHeight());
+  if (tableWrapperRef.value) {
+    resizeObserver.observe(tableWrapperRef.value);
+  }
+});
+
+onBeforeUnmount(() => {
+  resizeObserver?.disconnect();
 });
 
 function openCreate() {
@@ -899,11 +914,25 @@ async function deleteRule(rule: RuleItem) {
 </script>
 
 <style scoped>
+.rules-page {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
 .page-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 16px;
+  margin-bottom: 12px;
+  flex-shrink: 0;
+}
+
+.table-wrapper {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .table-cell-ellipsis {
@@ -921,10 +950,12 @@ async function deleteRule(rule: RuleItem) {
 .keyword-search {
   margin-bottom: 8px;
   max-width: 320px;
+  flex-shrink: 0;
 }
 
 .keyword-list-wrap {
-  min-height: 120px;
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
   border: 1px solid #d9d9d9;
   border-radius: 6px;
@@ -974,6 +1005,7 @@ async function deleteRule(rule: RuleItem) {
 
 .keyword-pagination {
   margin-top: 8px;
+  flex-shrink: 0;
 }
 
 .keyword-add-row {
@@ -981,6 +1013,7 @@ async function deleteRule(rule: RuleItem) {
   gap: 8px;
   margin-top: 12px;
   align-items: center;
+  flex-shrink: 0;
 }
 
 .keyword-add-input {
@@ -1006,22 +1039,27 @@ async function deleteRule(rule: RuleItem) {
 
 .rules-modal-main {
   flex: 1;
+  min-height: 0;
   overflow: hidden;
 }
 
 .rules-form-root {
   height: 100%;
+  display: flex;
+  flex-direction: column;
 }
 
 .rules-columns {
   display: flex;
-  height: 100%;
+  flex: 1;
+  min-height: 0;
   gap: 16px;
 }
 
 .rules-column {
   flex: 1;
   min-width: 0;
+  min-height: 0;
   display: flex;
   flex-direction: column;
 }
@@ -1062,23 +1100,85 @@ async function deleteRule(rule: RuleItem) {
 </style>
 
 <style>
+/* ── Modal 全屏 ── */
 .rules-modal-wrap .ant-modal {
   max-width: 100vw;
   width: 100vw !important;
   top: 0;
   padding-bottom: 0;
 }
-
 .rules-modal-wrap .ant-modal-content {
   height: 100vh;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
-
 .rules-modal-wrap .ant-modal-body {
   flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   padding: 16px 24px 0;
+  overflow: hidden;
+}
+
+/* ── 打通 Tabs 内部 flex 链 ── */
+.rules-modal-wrap .rules-modal-main {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.rules-modal-wrap .ant-tabs {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.rules-modal-wrap .ant-tabs > .ant-tabs-content-holder {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+.rules-modal-wrap .ant-tabs-content {
+  height: 100%;
+}
+.rules-modal-wrap .ant-tabs-tabpane-active {
+  height: 100%;
+}
+
+/* ── 打通 form-item 内部 flex 链，让 keyword-list-wrap 能拿到剩余高度 ── */
+.rules-modal-wrap .keyword-form-item--filled > .ant-row {
+  flex: 1 !important;
+  min-height: 0;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+}
+.rules-modal-wrap .keyword-form-item--filled .ant-form-item-label {
+  flex-shrink: 0;
+  width: 100%;
+}
+.rules-modal-wrap .keyword-form-item--filled .ant-form-item-control {
+  flex: 1 !important;
+  min-height: 0;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+}
+.rules-modal-wrap .keyword-form-item--filled .ant-form-item-control-input {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+}
+.rules-modal-wrap .keyword-form-item--filled .ant-form-item-control-input-content {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
 }
 </style>
