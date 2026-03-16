@@ -26,7 +26,7 @@ export function createRedditApi({ pool }: Deps): Router {
       const result = await pool.query<RedditPostRow>(
         `SELECT id, subreddit, title, created_utc, fetched_at, source, content, process_at
          FROM reddit_posts
-         WHERE process_at IS NULL
+         WHERE process_at IS NULL AND preprocess_at IS NOT NULL
          ORDER BY created_utc ASC NULLS LAST`
       );
       res.json({ items: result.rows });

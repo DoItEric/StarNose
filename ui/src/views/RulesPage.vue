@@ -48,228 +48,316 @@
       v-model:open="createVisible"
       :title="editId ? '编辑规则' : '新增规则'"
       :footer="null"
-      width="720px"
+      wrap-class-name="rules-modal-wrap"
     >
-      <a-form layout="vertical">
-        <a-form-item label="规则名称">
-          <a-input v-model:value="form.name" />
-        </a-form-item>
-        <a-form-item label="关键字需求描述">
-          <a-textarea
-            v-model:value="form.keywordDescription"
-            :rows="4"
-            placeholder="请描述你希望用哪些关键词来检索数据，越详细越好，便于生成或补充关键词。"
-          />
-          <div class="action-buttons">
-            <a-button
-              :loading="generateLoading"
-              @click="handleGenerateKeywords"
-            >
-              生成关键词
-            </a-button>
-            <a-button
-              :loading="supplementLoading"
-              :disabled="form.keywords.length === 0"
-              @click="handleSupplementKeywords"
-            >
-              补充关键字
-            </a-button>
-          </div>
-        </a-form-item>
-        <a-form-item label="信息偏好">
-          <a-textarea
-            v-model:value="form.description"
-            :rows="4"
-            placeholder="描述你偏好的信息特征，用于 LLM 匹配与筛选内容。"
-          />
-        </a-form-item>
-
-        <a-form-item label="关键字">
-          <a-input-search
-            v-model:value="keywordSearch"
-            placeholder="输入以模糊匹配关键字"
-            allow-clear
-            class="keyword-search"
-          />
-          <div ref="keywordListRef" class="keyword-list-wrap">
-            <div
-              v-for="(item, index) in paginatedKeywords"
-              :key="item.text + '-' + resolvedKeywordIndex(item)"
-              :class="['keyword-row', { 'keyword-row-new': item.isNew }]"
-            >
-              <span class="keyword-text">{{ item.text }}</span>
-              <a-button
-                type="text"
-                size="small"
-                danger
-                class="keyword-delete"
-                @click="removeKeyword(resolvedKeywordIndex(item))"
-              >
-                删除
-              </a-button>
-            </div>
-            <div v-if="filteredKeywords.length === 0" class="keyword-empty">
-              暂无关键字，可点击「生成关键词」或「补充关键字」
-            </div>
-          </div>
-          <a-pagination
-            v-if="filteredKeywords.length > pageSize"
-            v-model:current="keywordPage"
-            v-model:page-size="pageSize"
-            :total="filteredKeywords.length"
-            size="small"
-            show-size-changer
-            :page-size-options="['10', '20', '50']"
-            show-total
-            class="keyword-pagination"
-          />
-          <div class="keyword-add-row">
-            <a-input
-              v-model:value="addKeywordInput"
-              placeholder="输入关键字，多个用逗号分隔"
-              allow-clear
-              class="keyword-add-input"
-              @press-enter="addKeywordsFromInput"
-            />
-            <a-button type="primary" @click="addKeywordsFromInput">Add</a-button>
-          </div>
-        </a-form-item>
-
-        <a-form-item label="负面关键字（命中则忽略）">
-          <a-input-search
-            v-model:value="negativeKeywordSearch"
-            placeholder="输入以模糊匹配负面关键字"
-            allow-clear
-            class="keyword-search"
-          />
-          <div class="keyword-list-wrap">
-            <div
-              v-for="item in paginatedNegativeKeywords"
-              :key="item.text + '-' + resolvedNegativeKeywordIndex(item)"
-              class="keyword-row"
-            >
-              <span class="keyword-text">{{ item.text }}</span>
-              <a-button
-                type="text"
-                size="small"
-                danger
-                class="keyword-delete"
-                @click="removeNegativeKeyword(resolvedNegativeKeywordIndex(item))"
-              >
-                删除
-              </a-button>
-            </div>
-            <div v-if="filteredNegativeKeywords.length === 0" class="keyword-empty">
-              暂无负面关键字（该项不自动生成，请手工添加）
-            </div>
-          </div>
-          <a-pagination
-            v-if="filteredNegativeKeywords.length > negativePageSize"
-            v-model:current="negativeKeywordPage"
-            v-model:page-size="negativePageSize"
-            :total="filteredNegativeKeywords.length"
-            size="small"
-            show-size-changer
-            :page-size-options="['10', '20', '50']"
-            show-total
-            class="keyword-pagination"
-          />
-          <div class="keyword-add-row">
-            <a-input
-              v-model:value="addNegativeKeywordInput"
-              placeholder="输入负面关键字，多个用逗号分隔"
-              allow-clear
-              class="keyword-add-input"
-              @press-enter="addNegativeKeywordsFromInput"
-            />
-            <a-button type="primary" @click="addNegativeKeywordsFromInput">Add</a-button>
-          </div>
-        </a-form-item>
-
-        <a-form-item label="生效插件">
-          <a-checkbox-group v-model:value="form.selectedPluginKeys" class="plugin-checkbox-group">
-            <a-checkbox
-              v-for="p in pluginList"
-              :key="p.key"
-              :value="p.key"
-            >
-              {{ p.name || p.key }}
-            </a-checkbox>
-          </a-checkbox-group>
-          <div v-if="pluginList.length === 0" class="plugin-empty">暂无可用插件</div>
-        </a-form-item>
-
-        <a-form-item label="筛选 Prompt 文件">
-          <a-input
-            v-model:value="form.promptFile"
-            placeholder="prompt 文件名（不含扩展名），如 validate_content_zh"
-          />
-        </a-form-item>
-        <a-form-item label="内容最大长度（字符）">
-          <a-input-number
-            v-model:value="form.contentLength"
-            placeholder="不填则不限制，超过则不做 LLM 匹配"
-            :min="1"
-            style="width: 100%"
-          />
-        </a-form-item>
-
-        <a-form-item label="内容最小长度（字符）">
-          <a-input-number
-            v-model:value="form.contentMinLength"
-            placeholder="不填则不限制，不足则不做 LLM 匹配"
-            :min="1"
-            style="width: 100%"
-          />
-        </a-form-item>
-
-        <a-form-item label="Reddit 白名单（维护后仅抓取这些频道）">
-          <a-input
-            v-model:value="addWhitelistInput"
-            placeholder="输入 subreddit，多个用逗号分隔"
-            allow-clear
-            @press-enter="addWhitelistFromInput"
-          />
-          <div class="tag-list">
-            <a-tag
-              v-for="name in form.subredditWhitelist"
-              :key="'wl-' + name"
-              closable
-              @close.prevent="removeWhitelist(name)"
-            >
-              {{ name }}
-            </a-tag>
-            <div v-if="form.subredditWhitelist.length === 0" class="keyword-empty">
-              未配置白名单（将使用黑名单进行排除）
-            </div>
-          </div>
-        </a-form-item>
-
-        <a-form-item label="Reddit 黑名单（白名单为空时生效）">
-          <a-input
-            v-model:value="addBlacklistInput"
-            placeholder="输入 subreddit，多个用逗号分隔"
-            allow-clear
-            @press-enter="addBlacklistFromInput"
-          />
-          <div class="tag-list">
-            <a-tag
-              v-for="name in form.subredditBlacklist"
-              :key="'bl-' + name"
-              closable
-              @close.prevent="removeBlacklist(name)"
-            >
-              {{ name }}
-            </a-tag>
-            <div v-if="form.subredditBlacklist.length === 0" class="keyword-empty">
-              未配置黑名单
-            </div>
-          </div>
-        </a-form-item>
-      </a-form>
-      <div class="modal-footer">
-        <a-button @click="closeCreate">取消</a-button>
-        <a-button type="primary" @click="submitRule">保存</a-button>
+      <div class="rules-modal-layout">
+        <div class="rules-modal-main">
+          <a-tabs v-model:activeKey="activeTab" class="rules-tabs">
+            <a-tab-pane key="base" tab="基础设置">
+              <a-form layout="vertical" class="rules-form-root">
+                <a-form-item label="规则名称">
+                  <a-input v-model:value="form.name" />
+                </a-form-item>
+                <a-form-item label="信息偏好">
+                  <a-textarea
+                    v-model:value="form.description"
+                    :rows="4"
+                    placeholder="描述你偏好的信息特征，用于 LLM 匹配与筛选内容。"
+                  />
+                </a-form-item>
+                <a-form-item label="生效插件">
+                  <a-checkbox-group v-model:value="form.selectedPluginKeys" class="plugin-checkbox-group">
+                    <a-checkbox
+                      v-for="p in pluginList"
+                      :key="p.key"
+                      :value="p.key"
+                    >
+                      {{ p.name || p.key }}
+                    </a-checkbox>
+                  </a-checkbox-group>
+                  <div v-if="pluginList.length === 0" class="plugin-empty">暂无可用插件</div>
+                </a-form-item>
+                <a-form-item label="筛选 Prompt 文件">
+                  <a-input
+                    v-model:value="form.promptFile"
+                    placeholder="prompt 文件名（不含扩展名），如 validate_content_zh"
+                  />
+                </a-form-item>
+                <a-form-item label="内容最大长度（字符）">
+                  <a-input-number
+                    v-model:value="form.contentLength"
+                    placeholder="不填则不限制，超过则不做 LLM 匹配"
+                    :min="1"
+                    style="width: 100%"
+                  />
+                </a-form-item>
+                <a-form-item label="内容最小长度（字符）">
+                  <a-input-number
+                    v-model:value="form.contentMinLength"
+                    placeholder="不填则不限制，不足则不做 LLM 匹配"
+                    :min="1"
+                    style="width: 100%"
+                  />
+                </a-form-item>
+              </a-form>
+            </a-tab-pane>
+            <a-tab-pane key="keywords" tab="关键字设置">
+              <a-form layout="vertical" class="rules-form-root">
+                <div class="rules-columns">
+                  <div class="rules-column">
+                    <div class="rules-column-content">
+                      <a-form-item label="关键字需求描述">
+                        <a-textarea
+                          v-model:value="form.keywordDescription"
+                          :rows="4"
+                          placeholder="请描述你希望用哪些关键词来检索数据，越详细越好，便于生成或补充关键词。"
+                        />
+                        <div class="action-buttons">
+                          <a-button
+                            :loading="generateLoading"
+                            @click="handleGenerateKeywords"
+                          >
+                            生成关键词
+                          </a-button>
+                          <a-button
+                            :loading="supplementLoading"
+                            :disabled="form.keywords.length === 0"
+                            @click="handleSupplementKeywords"
+                          >
+                            补充关键字
+                          </a-button>
+                        </div>
+                      </a-form-item>
+                      <a-form-item label="关键字" class="keyword-form-item keyword-form-item--filled">
+                        <a-input-search
+                          v-model:value="keywordSearch"
+                          placeholder="输入以模糊匹配关键字"
+                          allow-clear
+                          class="keyword-search"
+                        />
+                        <div ref="keywordListRef" class="keyword-list-wrap">
+                          <div
+                            v-for="(item, index) in paginatedKeywords"
+                            :key="item.text + '-' + resolvedKeywordIndex(item)"
+                            :class="['keyword-row', { 'keyword-row-new': item.isNew }]"
+                          >
+                            <span class="keyword-text">{{ item.text }}</span>
+                            <a-button
+                              type="text"
+                              size="small"
+                              danger
+                              class="keyword-delete"
+                              @click="removeKeyword(resolvedKeywordIndex(item))"
+                            >
+                              删除
+                            </a-button>
+                          </div>
+                          <div v-if="filteredKeywords.length === 0" class="keyword-empty">
+                            暂无关键字，可点击「生成关键词」或「补充关键字」
+                          </div>
+                        </div>
+                        <a-pagination
+                          v-if="filteredKeywords.length > pageSize"
+                          v-model:current="keywordPage"
+                          v-model:page-size="pageSize"
+                          :total="filteredKeywords.length"
+                          size="small"
+                          show-size-changer
+                          :page-size-options="['10', '20', '50']"
+                          show-total
+                          class="keyword-pagination"
+                        />
+                        <div class="keyword-add-row">
+                          <a-input
+                            v-model:value="addKeywordInput"
+                            placeholder="输入关键字，多个用逗号分隔"
+                            allow-clear
+                            class="keyword-add-input"
+                            @press-enter="addKeywordsFromInput"
+                          />
+                          <a-button type="primary" @click="addKeywordsFromInput">Add</a-button>
+                        </div>
+                      </a-form-item>
+                    </div>
+                  </div>
+                  <div class="rules-column">
+                    <div class="rules-column-content">
+                      <a-form-item label="负面关键字（命中则忽略）" class="keyword-form-item keyword-form-item--filled">
+                        <a-input-search
+                          v-model:value="negativeKeywordSearch"
+                          placeholder="输入以模糊匹配负面关键字"
+                          allow-clear
+                          class="keyword-search"
+                        />
+                        <div class="keyword-list-wrap">
+                          <div
+                            v-for="item in paginatedNegativeKeywords"
+                            :key="item.text + '-' + resolvedNegativeKeywordIndex(item)"
+                            class="keyword-row"
+                          >
+                            <span class="keyword-text">{{ item.text }}</span>
+                            <a-button
+                              type="text"
+                              size="small"
+                              danger
+                              class="keyword-delete"
+                              @click="removeNegativeKeyword(resolvedNegativeKeywordIndex(item))"
+                            >
+                              删除
+                            </a-button>
+                          </div>
+                          <div v-if="filteredNegativeKeywords.length === 0" class="keyword-empty">
+                            暂无负面关键字（该项不自动生成，请手工添加）
+                          </div>
+                        </div>
+                        <a-pagination
+                          v-if="filteredNegativeKeywords.length > negativePageSize"
+                          v-model:current="negativeKeywordPage"
+                          v-model:page-size="negativePageSize"
+                          :total="filteredNegativeKeywords.length"
+                          size="small"
+                          show-size-changer
+                          :page-size-options="['10', '20', '50']"
+                          show-total
+                          class="keyword-pagination"
+                        />
+                        <div class="keyword-add-row">
+                          <a-input
+                            v-model:value="addNegativeKeywordInput"
+                            placeholder="输入负面关键字，多个用逗号分隔"
+                            allow-clear
+                            class="keyword-add-input"
+                            @press-enter="addNegativeKeywordsFromInput"
+                          />
+                          <a-button type="primary" @click="addNegativeKeywordsFromInput">Add</a-button>
+                        </div>
+                      </a-form-item>
+                    </div>
+                  </div>
+                </div>
+              </a-form>
+            </a-tab-pane>
+            <a-tab-pane key="reddit" tab="Reddit 频道过滤">
+              <a-form layout="vertical" class="rules-form-root">
+                <div class="rules-columns">
+                  <div class="rules-column">
+                    <div class="rules-column-content">
+                      <a-form-item label="Reddit 白名单（维护后仅抓取这些频道）" class="keyword-form-item keyword-form-item--filled">
+                        <a-input-search
+                          v-model:value="whitelistSearch"
+                          placeholder="输入以模糊匹配 subreddit"
+                          allow-clear
+                          class="keyword-search"
+                        />
+                        <div class="keyword-list-wrap">
+                          <div
+                            v-for="name in paginatedWhitelist"
+                            :key="'wl-' + name"
+                            class="keyword-row"
+                          >
+                            <span class="keyword-text">{{ name }}</span>
+                            <a-button
+                              type="text"
+                              size="small"
+                              danger
+                              class="keyword-delete"
+                              @click="removeWhitelist(name)"
+                            >
+                              删除
+                            </a-button>
+                          </div>
+                          <div v-if="filteredWhitelist.length === 0" class="keyword-empty">
+                            未配置白名单（将使用黑名单进行排除）
+                          </div>
+                        </div>
+                        <a-pagination
+                          v-if="filteredWhitelist.length > whitelistPageSize"
+                          v-model:current="whitelistPage"
+                          v-model:page-size="whitelistPageSize"
+                          :total="filteredWhitelist.length"
+                          size="small"
+                          show-size-changer
+                          :page-size-options="['10', '20', '50']"
+                          show-total
+                          class="keyword-pagination"
+                        />
+                        <div class="keyword-add-row">
+                          <a-input
+                            v-model:value="addWhitelistInput"
+                            placeholder="输入 subreddit，多个用逗号分隔"
+                            allow-clear
+                            class="keyword-add-input"
+                            @press-enter="addWhitelistFromInput"
+                          />
+                          <a-button type="primary" @click="addWhitelistFromInput">Add</a-button>
+                        </div>
+                      </a-form-item>
+                    </div>
+                  </div>
+                  <div class="rules-column">
+                    <div class="rules-column-content">
+                      <a-form-item label="Reddit 黑名单（白名单为空时生效）" class="keyword-form-item keyword-form-item--filled">
+                        <a-input-search
+                          v-model:value="blacklistSearch"
+                          placeholder="输入以模糊匹配 subreddit"
+                          allow-clear
+                          class="keyword-search"
+                        />
+                        <div class="keyword-list-wrap">
+                          <div
+                            v-for="name in paginatedBlacklist"
+                            :key="'bl-' + name"
+                            class="keyword-row"
+                          >
+                            <span class="keyword-text">{{ name }}</span>
+                            <a-button
+                              type="text"
+                              size="small"
+                              danger
+                              class="keyword-delete"
+                              @click="removeBlacklist(name)"
+                            >
+                              删除
+                            </a-button>
+                          </div>
+                          <div v-if="filteredBlacklist.length === 0" class="keyword-empty">
+                            未配置黑名单
+                          </div>
+                        </div>
+                        <a-pagination
+                          v-if="filteredBlacklist.length > blacklistPageSize"
+                          v-model:current="blacklistPage"
+                          v-model:page-size="blacklistPageSize"
+                          :total="filteredBlacklist.length"
+                          size="small"
+                          show-size-changer
+                          :page-size-options="['10', '20', '50']"
+                          show-total
+                          class="keyword-pagination"
+                        />
+                        <div class="keyword-add-row">
+                          <a-input
+                            v-model:value="addBlacklistInput"
+                            placeholder="输入 subreddit，多个用逗号分隔"
+                            allow-clear
+                            class="keyword-add-input"
+                            @press-enter="addBlacklistFromInput"
+                          />
+                          <a-button type="primary" @click="addBlacklistFromInput">Add</a-button>
+                        </div>
+                      </a-form-item>
+                    </div>
+                  </div>
+                </div>
+              </a-form>
+            </a-tab-pane>
+          </a-tabs>
+        </div>
+        <div class="rules-modal-footer">
+          <a-button @click="closeCreate">取消</a-button>
+          <a-button @click="submitRuleAndContinue">保存并继续</a-button>
+          <a-button type="primary" @click="submitRule">保存</a-button>
+        </div>
       </div>
     </a-modal>
   </div>
@@ -363,6 +451,7 @@ const columns = [
 const rules = ref<RuleItem[]>([]);
 const createVisible = ref(false);
 const editId = ref<string | null>(null);
+const activeTab = ref("keywords");
 const form = ref({
   name: "",
   keywordDescription: "",
@@ -383,7 +472,7 @@ const generateLoading = ref(false);
 const supplementLoading = ref(false);
 const keywordSearch = ref("");
 const keywordPage = ref(1);
-const pageSize = ref(10);
+const pageSize = ref(20);
 const addKeywordInput = ref("");
 const keywordListRef = ref<HTMLElement | null>(null);
 
@@ -391,6 +480,14 @@ const negativeKeywordSearch = ref("");
 const negativeKeywordPage = ref(1);
 const negativePageSize = ref(10);
 const addNegativeKeywordInput = ref("");
+
+const whitelistSearch = ref("");
+const whitelistPage = ref(1);
+const whitelistPageSize = ref(10);
+
+const blacklistSearch = ref("");
+const blacklistPage = ref(1);
+const blacklistPageSize = ref(10);
 
 const originalWhitelist = ref<string[]>([]);
 const originalBlacklist = ref<string[]>([]);
@@ -427,6 +524,32 @@ const paginatedNegativeKeywords = computed(() => {
   const list = filteredNegativeKeywords.value;
   const start = (negativeKeywordPage.value - 1) * negativePageSize.value;
   return list.slice(start, start + negativePageSize.value);
+});
+
+const filteredWhitelist = computed(() => {
+  const q = whitelistSearch.value.trim().toLowerCase();
+  const list = form.value.subredditWhitelist;
+  if (!q) return list;
+  return list.filter((name) => name.toLowerCase().includes(q));
+});
+
+const paginatedWhitelist = computed(() => {
+  const list = filteredWhitelist.value;
+  const start = (whitelistPage.value - 1) * whitelistPageSize.value;
+  return list.slice(start, start + whitelistPageSize.value);
+});
+
+const filteredBlacklist = computed(() => {
+  const q = blacklistSearch.value.trim().toLowerCase();
+  const list = form.value.subredditBlacklist;
+  if (!q) return list;
+  return list.filter((name) => name.toLowerCase().includes(q));
+});
+
+const paginatedBlacklist = computed(() => {
+  const list = filteredBlacklist.value;
+  const start = (blacklistPage.value - 1) * blacklistPageSize.value;
+  return list.slice(start, start + blacklistPageSize.value);
 });
 
 function resolvedNegativeKeywordIndex(item: KeywordItem) {
@@ -489,6 +612,7 @@ function openCreate() {
     subredditWhitelist: [],
     subredditBlacklist: []
   };
+  activeTab.value = "keywords";
   originalWhitelist.value = [];
   originalBlacklist.value = [];
   addWhitelistInput.value = "";
@@ -499,6 +623,8 @@ function openCreate() {
   negativeKeywordSearch.value = "";
   negativeKeywordPage.value = 1;
   addNegativeKeywordInput.value = "";
+  blacklistSearch.value = "";
+  blacklistPage.value = 1;
   createVisible.value = true;
 }
 
@@ -558,6 +684,11 @@ async function openEdit(rule: RuleItem) {
   negativeKeywordSearch.value = "";
   negativeKeywordPage.value = 1;
   addNegativeKeywordInput.value = "";
+  blacklistSearch.value = "";
+  blacklistPage.value = 1;
+   whitelistSearch.value = "";
+   whitelistPage.value = 1;
+   activeTab.value = "keywords";
   createVisible.value = true;
 }
 
@@ -684,7 +815,7 @@ function removeBlacklist(name: string) {
   );
 }
 
-async function submitRule() {
+async function submitRule(keepOpen = false) {
   const payload = {
     name: form.value.name,
     keywordDescription: form.value.keywordDescription,
@@ -702,6 +833,9 @@ async function submitRule() {
   } else {
     const created = await http.post("/rules", payload);
     ruleId = created.data?.id ?? null;
+    if (ruleId) {
+      editId.value = ruleId;
+    }
   }
 
   // req0310: 同步该规则的 subreddit 黑/白名单（差量更新）
@@ -736,10 +870,19 @@ async function submitRule() {
         http.delete(`/rules/${ruleId}/subreddit-blacklist`, { data: { name } })
       )
     ]);
+    // 保存成功后，同步原始列表，避免再次保存时重复提交
+    originalWhitelist.value = [...wlNow];
+    originalBlacklist.value = [...blNow];
   }
 
-  createVisible.value = false;
+  if (!keepOpen) {
+    createVisible.value = false;
+  }
   await loadRules();
+}
+
+async function submitRuleAndContinue() {
+  await submitRule(true);
 }
 
 async function toggleRule(rule: RuleItem) {
@@ -782,7 +925,6 @@ async function deleteRule(rule: RuleItem) {
 
 .keyword-list-wrap {
   min-height: 120px;
-  max-height: 280px;
   overflow-y: auto;
   border: 1px solid #d9d9d9;
   border-radius: 6px;
@@ -795,7 +937,12 @@ async function deleteRule(rule: RuleItem) {
   align-items: center;
   justify-content: space-between;
   padding: 4px 8px;
-  border-radius: 4px;
+  border-radius: 0;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.keyword-row:last-child {
+  border-bottom: none;
 }
 
 .keyword-row-new {
@@ -851,10 +998,87 @@ async function deleteRule(rule: RuleItem) {
   font-size: 12px;
 }
 
-.modal-footer {
-  margin-top: 16px;
+.rules-modal-layout {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.rules-modal-main {
+  flex: 1;
+  overflow: hidden;
+}
+
+.rules-form-root {
+  height: 100%;
+}
+
+.rules-columns {
+  display: flex;
+  height: 100%;
+  gap: 16px;
+}
+
+.rules-column {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.rules-column-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding-right: 4px;
+  gap: 12px;
+}
+
+.keyword-form-item {
+  margin-bottom: 0;
+}
+
+.keyword-form-item--filled {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.keyword-form-item--filled .keyword-list-wrap {
+  flex: 1;
+  max-height: none;
+}
+
+.rules-modal-footer {
+  border-top: 1px solid #f0f0f0;
+  padding: 12px 24px;
   display: flex;
   justify-content: flex-end;
   gap: 8px;
+  background: #fff;
+}
+</style>
+
+<style>
+.rules-modal-wrap .ant-modal {
+  max-width: 100vw;
+  width: 100vw !important;
+  top: 0;
+  padding-bottom: 0;
+}
+
+.rules-modal-wrap .ant-modal-content {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.rules-modal-wrap .ant-modal-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 16px 24px 0;
 }
 </style>
