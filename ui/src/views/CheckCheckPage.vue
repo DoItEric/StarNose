@@ -26,21 +26,24 @@
             </a>
             <template v-else>{{ currentItem.title }}</template>
           </div>
-          <span
-            class="favorite-star"
-            :class="{ 'favorite-star--active': currentItem.favorite }"
-            @click.stop="openFavoriteModalOrToggle(currentItem)"
-          >
-            ★
-          </span>
-          <span
-            class="connected-icon"
-            :class="{ 'connected-icon--active': currentItem.connected }"
-            @click.stop="toggleConnected(currentItem)"
-            title="联络状态"
-          >
-            ☎
-          </span>
+          <div class="checkcheck-card__title-actions">
+            <span
+              class="favorite-star"
+              :class="{ 'favorite-star--active': currentItem.favorite }"
+              @click.stop="openFavoriteModalOrToggle(currentItem)"
+              title="收藏"
+            >
+              ★
+            </span>
+            <span
+              class="connected-icon"
+              :class="{ 'connected-icon--active': currentItem.connected }"
+              @click.stop="toggleConnected(currentItem)"
+              title="联络状态"
+            >
+              ☎
+            </span>
+          </div>
         </div>
 
         <div class="checkcheck-card__meta">
@@ -154,9 +157,9 @@
             danger
             block
             @click="onIgnoreAndNext(currentItem)"
-            :disabled="currentItem.read === 1 || currentItem.read === -1"
+            :disabled="false"
           >
-            忽略
+            {{ currentItem.read === -1 ? "恢复已读" : "忽略" }}
           </a-button>
           <a-button
             type="default"
@@ -538,12 +541,13 @@ async function refreshData() {
 }
 
 async function onIgnoreAndNext(record: DataItem) {
-  if (record.read === 1 || record.read === -1) {
-    await goNext();
-    return;
+  if (record.read === -1) {
+    await markRead(record.id, 1);
+    record.read = 1;
+  } else {
+    await markRead(record.id, -1);
+    record.read = -1;
   }
-  await markRead(record.id, -1);
-  record.read = -1;
   await goNext();
 }
 
@@ -636,7 +640,26 @@ onMounted(() => {
 .checkcheck-card__title {
   font-size: 16px;
   font-weight: 500;
-  flex: 1;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.checkcheck-card__title > a {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.checkcheck-card__title-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  line-height: 1;
+  flex: 0 0 auto;
 }
 
 .checkcheck-card__meta {
@@ -731,7 +754,6 @@ onMounted(() => {
 }
 
 .favorite-star {
-  margin-left: auto;
   cursor: pointer;
   color: rgba(0, 0, 0, 0.25);
 }

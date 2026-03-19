@@ -144,10 +144,10 @@
             <a-button
               type="link"
               size="middle"
-              :disabled="record.read === 1 || record.read === -1"
+              :disabled="false"
               @click.stop="ignoreItem(record)"
             >
-              忽略
+              {{ record.read === -1 ? "恢复已读" : "忽略" }}
             </a-button>
             <a-button
               type="link"
@@ -190,32 +190,37 @@
             @click="openCard(item)"
           >
             <template #title>
-              <div class="data-card__title-row">
-                <a
-                  v-if="item.url"
-                  :href="item.url"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  @click.stop
-                >
-                  {{ item.title }}
-                </a>
-                <template v-else>{{ item.title }}</template>
-                <span
-                  class="favorite-star"
-                  :class="{ 'favorite-star--active': item.favorite }"
-                  @click.stop="openFavoriteModalOrToggle(item)"
-                >
-                  ★
-                </span>
-                <span
-                  class="connected-icon"
-                  :class="{ 'connected-icon--active': item.connected }"
-                  @click.stop="toggleConnected(item)"
-                  title="联络状态"
-                >
-                  ☎
-                </span>
+              <div class="data-card__title">
+                <div class="data-card__title-text">
+                  <a
+                    v-if="item.url"
+                    :href="item.url"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    @click.stop
+                  >
+                    {{ item.title }}
+                  </a>
+                  <template v-else>{{ item.title }}</template>
+                </div>
+                <div class="data-card__title-actions">
+                  <span
+                    class="favorite-star"
+                    :class="{ 'favorite-star--active': item.favorite }"
+                    @click.stop="openFavoriteModalOrToggle(item)"
+                    title="收藏"
+                  >
+                    ★
+                  </span>
+                  <span
+                    class="connected-icon"
+                    :class="{ 'connected-icon--active': item.connected }"
+                    @click.stop="toggleConnected(item)"
+                    title="联络状态"
+                  >
+                    ☎
+                  </span>
+                </div>
               </div>
             </template>
 
@@ -291,10 +296,10 @@
                 class="data-card-action"
                 type="text"
                 block
-                :disabled="item.read === 1 || item.read === -1"
+                :disabled="false"
                 @click.stop="ignoreItem(item)"
               >
-                忽略
+                {{ item.read === -1 ? "恢复已读" : "忽略" }}
               </a-button>
               <a-button
                 class="data-card-action"
@@ -683,7 +688,11 @@ async function openPage(record: DataItem) {
 }
 
 async function ignoreItem(record: DataItem) {
-  if (record.read === 1 || record.read === -1) return;
+  if (record.read === -1) {
+    await markRead(record.id, 1);
+    record.read = 1;
+    return;
+  }
   await markRead(record.id, -1);
   record.read = -1;
 }
@@ -907,15 +916,41 @@ onMounted(() => {
 }
 
 .data-card__title-row {
+  display: none;
+}
+
+.favorite-star {
+  cursor: pointer;
+  color: rgba(0, 0, 0, 0.25);
+}
+
+.data-card__title {
   display: flex;
   align-items: flex-start;
   gap: 8px;
 }
 
-.favorite-star {
-  margin-left: auto;
-  cursor: pointer;
-  color: rgba(0, 0, 0, 0.25);
+.data-card__title-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  line-height: 1;
+  flex: 0 0 auto;
+}
+
+.data-card__title-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.data-card__title-text > a {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .favorite-star--active {
