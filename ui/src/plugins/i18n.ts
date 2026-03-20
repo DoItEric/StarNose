@@ -10,6 +10,8 @@ const messages = {
       favorites: "收藏",
       tracking: "跟踪",
       analysis: "分析",
+      analysis_overview: "分析总览",
+      reddit_req: "reddit需求",
       settings: "系统设置",
       data_abandon: "数据废弃"
     },
@@ -31,6 +33,8 @@ const messages = {
       favorites: "Favorites",
       tracking: "Tracking",
       analysis: "Analysis",
+      analysis_overview: "Analysis Overview",
+      reddit_req: "Reddit Requirements",
       settings: "Settings",
       data_abandon: "数据废弃"
     },

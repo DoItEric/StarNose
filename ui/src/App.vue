@@ -11,7 +11,9 @@
       <a-menu
         mode="inline"
         :selected-keys="[selectedKey]"
+        :open-keys="openKeys"
         @click="onMenuClick"
+        @openChange="onOpenChange"
       >
         <a-menu-item key="datasources">
           {{ $t("menu.datasources") }}
@@ -34,9 +36,15 @@
         <a-menu-item key="tracking">
           {{ $t("menu.tracking") }}
         </a-menu-item>
-        <a-menu-item key="analysis">
-          {{ $t("menu.analysis") }}
-        </a-menu-item>
+        <a-sub-menu key="analysis_group">
+          <template #title>{{ $t("menu.analysis") }}</template>
+          <a-menu-item key="analysis">
+            {{ $t("menu.analysis_overview") }}
+          </a-menu-item>
+          <a-menu-item key="reddit_req_reports">
+            {{ $t("menu.reddit_req") }}
+          </a-menu-item>
+        </a-sub-menu>
         <a-menu-item key="settings">
           {{ $t("menu.settings") }}
         </a-menu-item>
@@ -84,7 +92,9 @@
       <a-menu
         mode="inline"
         :selected-keys="[selectedKey]"
+        :open-keys="openKeys"
         @click="onMobileMenuClick"
+        @openChange="onOpenChange"
       >
         <a-menu-item key="datasources">
           {{ $t("menu.datasources") }}
@@ -107,9 +117,15 @@
         <a-menu-item key="tracking">
           {{ $t("menu.tracking") }}
         </a-menu-item>
-        <a-menu-item key="analysis">
-          {{ $t("menu.analysis") }}
-        </a-menu-item>
+        <a-sub-menu key="analysis_group">
+          <template #title>{{ $t("menu.analysis") }}</template>
+          <a-menu-item key="analysis">
+            {{ $t("menu.analysis_overview") }}
+          </a-menu-item>
+          <a-menu-item key="reddit_req_reports">
+            {{ $t("menu.reddit_req") }}
+          </a-menu-item>
+        </a-sub-menu>
         <a-menu-item key="settings">
           {{ $t("menu.settings") }}
         </a-menu-item>
@@ -137,7 +153,20 @@ const router = useRouter();
 const route = useRoute();
 const { t, locale } = useI18n();
 
-const selectedKey = computed(() => (route.name as string) || "datasources");
+const selectedKey = computed(() => {
+  const name = (route.name as string) || "datasources";
+  if (name === "reddit_req_report_detail") {
+    return "reddit_req_reports";
+  }
+  return name;
+});
+const openKeys = computed(() => {
+  const name = route.name as string;
+  if (name === "analysis" || name === "reddit_req_reports" || name === "reddit_req_report_detail") {
+    return ["analysis_group"];
+  }
+  return [];
+});
 
 const isMobile = ref(false);
 const mobileMenuVisible = ref(false);
@@ -160,6 +189,10 @@ const currentTitle = computed(() => {
       return t("menu.tracking");
     case "analysis":
       return t("menu.analysis");
+    case "reddit_req_reports":
+      return t("menu.reddit_req");
+    case "reddit_req_report_detail":
+      return t("menu.reddit_req");
     case "settings":
       return t("menu.settings");
     default:
@@ -174,6 +207,10 @@ function onMenuClick(info: { key: string }) {
 function onMobileMenuClick(info: { key: string }) {
   mobileMenuVisible.value = false;
   router.push({ name: info.key });
+}
+
+function onOpenChange(_keys: string[]) {
+  // 受控模式下由路由决定展开项，这里保留事件以避免菜单警告
 }
 
 function updateIsMobile() {

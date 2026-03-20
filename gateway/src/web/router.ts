@@ -7,6 +7,7 @@ import { createPluginsController } from "./plugins-controller";
 import { createDataController } from "./data-controller";
 import { createDataAbandonController } from "./data-abandon-controller";
 import { createAnalysisController } from "./analysis-controller";
+import { createRedditReqReportsController } from "./reddit-req-reports-controller";
 import { createStatusController } from "./status-controller";
 import { createTranslateController } from "./translate-controller";
 import { createFavoriteListsController } from "./favorite-lists-controller";
@@ -25,6 +26,7 @@ export function createWebRouter(deps: Deps): Router {
   router.use("/data", createDataController(deps));
   router.use("/data-abandon", createDataAbandonController(deps));
   router.use("/analysis", createAnalysisController(deps));
+  router.use("/reports/reddit-req", createRedditReqReportsController(deps));
   router.use("/status", createStatusController(deps));
   router.use("/translate", createTranslateController());
   router.use("/favorite-lists", createFavoriteListsController(deps));
