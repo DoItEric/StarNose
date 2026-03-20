@@ -6,6 +6,7 @@ pnpm-lock.yaml
 package-lock.json
 yarn.lock
 
+report/
 dist/
 dist-ssr/
 build/

@@ -1,0 +1,14 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "StarNose Gateway API",
+    "description": "根据 Express 路由自动扫描生成。用于 UI 调试与 AI MCP 调用。必要字段可通过接口注释持续补充。",
+    "version": "1.0.0"
+  },
+  "servers": [
+    {
+      "url": "http://localhost:3000/"
+    }
+  ],
+  "paths": {}
+}
