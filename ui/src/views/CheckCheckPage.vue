@@ -1,7 +1,17 @@
 <template>
   <div class="checkcheck-page">
     <div class="checkcheck-header">
-      <div class="checkcheck-header__title">checkcheck</div>
+      <div class="checkcheck-header__top">
+        <div class="checkcheck-header__title">checkcheck</div>
+        <a-select
+          v-model:value="selectedRuleId"
+          class="checkcheck-header__rule"
+          allow-clear
+          placeholder="全部规则（混合）"
+          :options="ruleSelectOptions"
+          @change="onRuleFilterChange"
+        />
+      </div>
       <div class="checkcheck-header__meta" v-if="pagination.total > 0">
         第 {{ currentGlobalIndex + 1 }} / {{ pagination.total }} 条
       </div>
@@ -275,6 +285,13 @@ const pagination = ref<{ page: number; pageSize: number; total: number }>({
 });
 const currentIndex = ref(0);
 const ruleNameMap = ref<Record<string, string>>({});
+const rulesList = ref<{ id: string; name: string }[]>([]);
+/** 未选：所有规则混合队列；选中：仅该 ruleId */
+const selectedRuleId = ref<string | undefined>(undefined);
+
+const ruleSelectOptions = computed(() =>
+  rulesList.value.map((r) => ({ value: r.id, label: r.name }))
+);
 
 const contentVisible = ref(false);
 const contentTranslated = ref<string | null>(null);
@@ -450,6 +467,11 @@ async function toggleConnected(record: DataItem) {
   record.connected = next;
 }
 
+async function onRuleFilterChange() {
+  currentIndex.value = 0;
+  await fetchPage(1);
+}
+
 async function fetchPage(page: number) {
   loading.value = true;
   try {
@@ -458,6 +480,9 @@ async function fetchPage(page: number) {
       pageSize: pagination.value.pageSize,
       readStatus: "unread"
     };
+    if (selectedRuleId.value) {
+      params.ruleId = selectedRuleId.value;
+    }
     const resp = await http.get("/data", { params });
     const rows = (resp.data.items ?? []) as any[];
     items.value = rows.map((r) => ({
@@ -492,12 +517,17 @@ async function ensureRules() {
     const resp = await http.get("/rules");
     const items = (resp.data.items ?? []) as { id: string; name?: string }[];
     const map: Record<string, string> = {};
+    rulesList.value = items.map((r) => ({
+      id: r.id,
+      name: r.name ?? r.id
+    }));
     for (const r of items) {
       map[r.id] = r.name ?? r.id;
     }
     ruleNameMap.value = map;
   } catch {
     ruleNameMap.value = {};
+    rulesList.value = [];
   }
 }
 
@@ -601,9 +631,17 @@ onMounted(() => {
 
 .checkcheck-header {
   display: flex;
-  align-items: baseline;
-  justify-content: space-between;
+  flex-direction: column;
+  gap: 6px;
   margin-bottom: 8px;
+}
+
+.checkcheck-header__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
 }
 
 .checkcheck-header__title {
@@ -611,9 +649,16 @@ onMounted(() => {
   font-weight: 600;
 }
 
+.checkcheck-header__rule {
+  flex: 1 1 160px;
+  max-width: 260px;
+  min-width: 140px;
+}
+
 .checkcheck-header__meta {
   font-size: 12px;
   color: rgba(0, 0, 0, 0.45);
+  align-self: flex-end;
 }
 
 .checkcheck-empty {

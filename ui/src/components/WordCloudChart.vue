@@ -3,7 +3,7 @@
 </template>
 
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import * as echarts from "echarts";
 import "echarts-wordcloud";
 
@@ -27,6 +27,8 @@ const height = props.height;
 
 const containerRef = ref<HTMLElement | null>(null);
 let chart: echarts.ECharts | null = null;
+let resizeObserver: ResizeObserver | null = null;
+let resizeObservedEl: HTMLElement | null = null;
 
 function toSeriesData(words: WordItem[]) {
   return words
@@ -85,10 +87,24 @@ watch(
 onMounted(() => {
   render();
   window.addEventListener("resize", onResize);
+  void nextTick(() => {
+    const el = containerRef.value;
+    if (typeof ResizeObserver === "undefined" || !el) return;
+    resizeObservedEl = el;
+    resizeObserver = new ResizeObserver(() => {
+      onResize();
+    });
+    resizeObserver.observe(el);
+  });
 });
 
 onBeforeUnmount(() => {
   window.removeEventListener("resize", onResize);
+  if (resizeObserver && resizeObservedEl) {
+    resizeObserver.unobserve(resizeObservedEl);
+  }
+  resizeObserver = null;
+  resizeObservedEl = null;
   chart?.dispose();
   chart = null;
 });

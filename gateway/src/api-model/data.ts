@@ -48,7 +48,7 @@ export interface ListDataQuery {
   favoriteListId?: string;
   readStatus?: "all" | "read" | "unread" | "ignored";
   keyword?: string;
-  /** attributes 模糊查询 */
+  /** attributes：按 JSON **键名** 模糊匹配（ILIKE） */
   attributesKeyword?: string;
   ruleId?: string;
   /** channel 模糊查询（req0310） */
@@ -79,6 +79,9 @@ export interface MarkDataReadRequest {
   id: string;
   read: boolean | number; // true/1=已阅, false/0=未阅, -1=忽略
 }
+
+/** POST /data/read/mark-all-unread：字段与列表查询一致，忽略 readStatus/page/pageSize，仅更新 read=0 */
+export type MarkAllUnreadAsReadBody = Partial<ListDataQuery> & Record<string, unknown>;
 
 export interface BlacklistChannelRequest {
   source: string;

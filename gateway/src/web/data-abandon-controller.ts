@@ -9,6 +9,7 @@ import type {
   MarkDataReadRequest,
   TrackDataRequest
 } from "../api-model";
+import { buildDataListConditions, whereClauseFrom } from "./data-list-conditions";
 
 interface Deps {
   pool: Pool;
@@ -29,15 +30,6 @@ export function createDataAbandonController({ pool }: Deps): Router {
       }
       return undefined;
     };
-    const toBoolean = (v: unknown): boolean | undefined => {
-      if (typeof v === "boolean") return v;
-      if (typeof v === "string") {
-        if (v === "true" || v === "1") return true;
-        if (v === "false" || v === "0") return false;
-      }
-      return undefined;
-    };
-
     const pageRaw = toNumber(query.page);
     const page = pageRaw && pageRaw > 0 ? Math.floor(pageRaw) : 1;
     const pageSizeRaw = toNumber(query.pageSize);
@@ -46,112 +38,18 @@ export function createDataAbandonController({ pool }: Deps): Router {
         ? Math.floor(pageSizeRaw)
         : 100;
 
-    const conditions: string[] = [];
-    const params: unknown[] = [];
-
-    const conditionsForStats: string[] = [];
-    const paramsForStats: unknown[] = [];
-
-    if (query.crawlTimeFrom) {
-      params.push(query.crawlTimeFrom);
-      conditions.push(`crawl_time >= $${params.length}`);
-
-      paramsForStats.push(query.crawlTimeFrom);
-      conditionsForStats.push(`crawl_time >= $${paramsForStats.length}`);
-    }
-    if (query.crawlTimeTo) {
-      params.push(query.crawlTimeTo);
-      conditions.push(`crawl_time <= $${params.length}`);
-
-      paramsForStats.push(query.crawlTimeTo);
-      conditionsForStats.push(`crawl_time <= $${paramsForStats.length}`);
-    }
-    if (query.publishTimeFrom) {
-      params.push(query.publishTimeFrom);
-      conditions.push(`publish_time >= $${params.length}`);
-
-      paramsForStats.push(query.publishTimeFrom);
-      conditionsForStats.push(`publish_time >= $${paramsForStats.length}`);
-    }
-    if (query.publishTimeTo) {
-      params.push(query.publishTimeTo);
-      conditions.push(`publish_time <= $${params.length}`);
-
-      paramsForStats.push(query.publishTimeTo);
-      conditionsForStats.push(`publish_time <= $${paramsForStats.length}`);
-    }
-    if (query.sources && query.sources.length > 0) {
-      params.push(query.sources);
-      conditions.push(`source = ANY($${params.length}::text[])`);
-
-      paramsForStats.push(query.sources);
-      conditionsForStats.push(`source = ANY($${paramsForStats.length}::text[])`);
-    }
-    if (query.channel && String(query.channel).trim() !== "") {
-      params.push(`%${String(query.channel).trim()}%`);
-      conditions.push(`channel ILIKE $${params.length}`);
-
-      paramsForStats.push(`%${String(query.channel).trim()}%`);
-      conditionsForStats.push(`channel ILIKE $${paramsForStats.length}`);
-    }
-    const trackingOnly = toBoolean((query as any).trackingOnly);
-    if (trackingOnly) {
-      conditions.push(
-        `EXISTS (SELECT 1 FROM tracking_items ti WHERE ti.data_id = data_items_abandon.id)`
-      );
-      conditionsForStats.push(
-        `EXISTS (SELECT 1 FROM tracking_items ti WHERE ti.data_id = data_items_abandon.id)`
-      );
-    }
-    if (query.readStatus && query.readStatus !== "all") {
-      if (query.readStatus === "read") {
-        params.push(1);
-        conditions.push(`read = $${params.length}`);
-      } else if (query.readStatus === "unread") {
-        params.push(0);
-        conditions.push(`read = $${params.length}`);
-      } else if (query.readStatus === "ignored") {
-        params.push(-1);
-        conditions.push(`read = $${params.length}`);
-      }
-    }
-    if (query.keyword) {
-      params.push(`%${query.keyword}%`);
-      params.push(`%${query.keyword}%`);
-      conditions.push(
-        `(title ILIKE $${params.length - 1} OR content ILIKE $${params.length})`
-      );
-
-      paramsForStats.push(`%${query.keyword}%`);
-      paramsForStats.push(`%${query.keyword}%`);
-      conditionsForStats.push(
-        `(title ILIKE $${paramsForStats.length - 1} OR content ILIKE $${paramsForStats.length})`
-      );
-    }
-    const attributesKeyword = typeof (query as any).attributesKeyword === "string"
-      ? String((query as any).attributesKeyword).trim()
-      : "";
-    if (attributesKeyword) {
-      params.push(`%${attributesKeyword}%`);
-      conditions.push(`attributes::text ILIKE $${params.length}`);
-
-      paramsForStats.push(`%${attributesKeyword}%`);
-      conditionsForStats.push(`attributes::text ILIKE $${paramsForStats.length}`);
-    }
-    if (query.ruleId) {
-      params.push(query.ruleId);
-      conditions.push(`rule_id = $${params.length}`);
-    }
-
-    let whereClause = "";
-    if (conditions.length > 0) {
-      whereClause = `WHERE ${conditions.join(" AND ")}`;
-    }
-
-    let whereClauseForStats = "";
-    if (conditionsForStats.length > 0) {
-      whereClauseForStats = `WHERE ${conditionsForStats.join(" AND ")}`;
-    }
+    const {
+      conditions,
+      params,
+      conditionsForStats,
+      paramsForStats
+    } = buildDataListConditions(
+      query as ListDataQuery & Record<string, unknown>,
+      "data_items_abandon",
+      "fromQuery"
+    );
+    const whereClause = whereClauseFrom(conditions);
+    const whereClauseForStats = whereClauseFrom(conditionsForStats);
 
     // 未阅(0)优先，已阅(1)次之，忽略(-1)最后
     let orderClause = "ORDER BY CASE WHEN read = 0 THEN 0 WHEN read = 1 THEN 1 ELSE 2 END ASC, crawl_time DESC";

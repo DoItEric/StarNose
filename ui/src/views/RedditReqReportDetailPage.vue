@@ -28,23 +28,30 @@
         <a-card title="Analysis 结构图" class="section">
           <div class="analysis-toolbar">
             <a-space wrap>
-              <a-select v-model:value="activeDimension" style="width: 220px">
+              <a-select v-model:value="activeDimension" class="analysis-dimension-select">
                 <a-select-option v-for="d in analysisNodes" :key="d.name" :value="d.name">
                   {{ d.name }}
                 </a-select-option>
               </a-select>
+              <a-button-group size="small" class="canvas-zoom-btns">
+                <a-button title="缩小" @click="zoomOut">−</a-button>
+                <a-button title="放大" @click="zoomIn">+</a-button>
+              </a-button-group>
+              <span class="muted canvas-zoom-label">{{ Math.round(scale * 100) }}%</span>
+              <a-button size="small" @click="zoomReset">重置视图</a-button>
               <a-button @click="expandAll">全展开</a-button>
               <a-button @click="collapseAll">合并到第一级</a-button>
-              <span class="muted">滚轮缩放，按住鼠标左键拖动画布</span>
+              <span class="muted canvas-hint canvas-hint--desktop">滚轮缩放，按住左键拖动画布</span>
+              <span class="muted canvas-hint canvas-hint--touch">点 ± 缩放；单指拖动画布</span>
             </a-space>
           </div>
           <div
             class="canvas-shell"
             @wheel.prevent="onCanvasWheel"
-            @mousedown="onCanvasDown"
-            @mousemove="onCanvasMove"
-            @mouseup="onCanvasUp"
-            @mouseleave="onCanvasUp"
+            @pointerdown="onCanvasPointerDown"
+            @pointermove="onCanvasPointerMove"
+            @pointerup="onCanvasPointerUp"
+            @pointercancel="onCanvasPointerUp"
           >
             <div class="canvas-content" :style="canvasStyle">
               <a-tree
@@ -223,6 +230,7 @@ const scale = ref(1);
 const offsetX = ref(0);
 const offsetY = ref(0);
 const dragging = ref(false);
+const activePointerId = ref<number | null>(null);
 const lastX = ref(0);
 const lastY = ref(0);
 
@@ -427,28 +435,63 @@ function goBack() {
   router.push({ name: "reddit_req_reports" });
 }
 
+function clampScale(v: number): number {
+  return Math.max(0.5, Math.min(2, v));
+}
+
 function onCanvasWheel(evt: WheelEvent) {
   const delta = evt.deltaY < 0 ? 0.1 : -0.1;
-  const next = Math.max(0.5, Math.min(2, scale.value + delta));
-  scale.value = Number(next.toFixed(2));
+  scale.value = Number(clampScale(scale.value + delta).toFixed(2));
 }
 
-function onCanvasDown(evt: MouseEvent) {
+function zoomIn() {
+  scale.value = Number(clampScale(scale.value + 0.12).toFixed(2));
+}
+
+function zoomOut() {
+  scale.value = Number(clampScale(scale.value - 0.12).toFixed(2));
+}
+
+function zoomReset() {
+  scale.value = 1;
+  offsetX.value = 0;
+  offsetY.value = 0;
+}
+
+function onCanvasPointerDown(evt: PointerEvent) {
+  const el = evt.target as HTMLElement | null;
+  if (el?.closest?.("a, button, .ant-btn, input, textarea, select, [role='button']")) {
+    return;
+  }
+  if (evt.pointerType === "mouse" && evt.button !== 0) return;
   dragging.value = true;
+  activePointerId.value = evt.pointerId;
   lastX.value = evt.clientX;
   lastY.value = evt.clientY;
+  try {
+    (evt.currentTarget as HTMLElement).setPointerCapture(evt.pointerId);
+  } catch {
+    /* ignore */
+  }
 }
 
-function onCanvasMove(evt: MouseEvent) {
-  if (!dragging.value) return;
+function onCanvasPointerMove(evt: PointerEvent) {
+  if (!dragging.value || evt.pointerId !== activePointerId.value) return;
   offsetX.value += evt.clientX - lastX.value;
   offsetY.value += evt.clientY - lastY.value;
   lastX.value = evt.clientX;
   lastY.value = evt.clientY;
 }
 
-function onCanvasUp() {
+function onCanvasPointerUp(evt: PointerEvent) {
+  if (evt.pointerId !== activePointerId.value) return;
   dragging.value = false;
+  activePointerId.value = null;
+  try {
+    (evt.currentTarget as HTMLElement).releasePointerCapture(evt.pointerId);
+  } catch {
+    /* ignore */
+  }
 }
 
 const canvasStyle = computed(() => ({
@@ -478,13 +521,53 @@ onMounted(() => {
   margin-bottom: 8px;
 }
 
+.analysis-dimension-select {
+  min-width: 160px;
+  max-width: min(220px, 100%);
+}
+
+.canvas-zoom-btns {
+  flex-shrink: 0;
+}
+
+.canvas-zoom-label {
+  min-width: 3em;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.canvas-hint--touch {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .canvas-hint--desktop {
+    display: none;
+  }
+  .canvas-hint--touch {
+    display: inline;
+  }
+}
+
 .canvas-shell {
   border: 1px solid #f0f0f0;
   border-radius: 8px;
   height: 520px;
+  max-height: min(520px, 55vh);
+  min-height: 260px;
   overflow: hidden;
   cursor: grab;
   user-select: none;
+  touch-action: none;
+  overscroll-behavior: contain;
+  -webkit-user-select: none;
+}
+
+@media (max-width: 768px) {
+  .canvas-shell {
+    height: min(480px, 50vh);
+    max-height: 55vh;
+  }
 }
 
 .canvas-shell:active {
@@ -502,6 +585,14 @@ onMounted(() => {
   gap: 6px;
   padding: 2px 8px;
   border-radius: 6px;
+  max-width: 100%;
+}
+
+@media (max-width: 768px) {
+  .tree-node {
+    flex-wrap: wrap;
+    align-items: flex-start;
+  }
 }
 
 .tree-node--pinned {
@@ -514,7 +605,7 @@ onMounted(() => {
 
 .leaf-card {
   margin-top: 4px;
-  max-width: 680px;
+  max-width: min(680px, 100%);
   padding: 8px;
   border: 1px solid #f0f0f0;
   border-radius: 6px;
@@ -540,8 +631,14 @@ onMounted(() => {
 
 .cloud-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(280px, 100%), 1fr));
   gap: 10px;
+}
+
+@media (max-width: 768px) {
+  .cloud-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 .pie-wrap {

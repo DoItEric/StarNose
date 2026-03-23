@@ -124,8 +124,18 @@ async function writeState(reportId: string, state: ReportState): Promise<void> {
 export function createRedditReqReportsController({ pool }: Deps): Router {
   const router = express.Router();
 
-  router.get("/", async (_req: Request, res: Response) => {
+  router.get("/", async (req: Request, res: Response) => {
     try {
+      const fromRaw =
+        typeof req.query.generatedFrom === "string" ? req.query.generatedFrom.trim() : "";
+      const toRaw =
+        typeof req.query.generatedTo === "string" ? req.query.generatedTo.trim() : "";
+      const tsFrom = fromRaw ? Date.parse(fromRaw) : NaN;
+      const tsTo = toRaw ? Date.parse(toRaw) : NaN;
+      const hasFrom = Number.isFinite(tsFrom);
+      const hasTo = Number.isFinite(tsTo);
+      const useTimeFilter = hasFrom || hasTo;
+
       const dir = getReportDir();
       const entries = await fs.readdir(dir, { withFileTypes: true });
       const items = entries
@@ -134,6 +144,13 @@ export function createRedditReqReportsController({ pool }: Deps): Router {
           id: e.name,
           timestamp: parseTimestampFromFolder(e.name)
         }))
+        .filter((x) => {
+          if (!useTimeFilter) return true;
+          if (x.timestamp <= 0) return false;
+          if (hasFrom && x.timestamp < tsFrom) return false;
+          if (hasTo && x.timestamp > tsTo) return false;
+          return true;
+        })
         .sort((a, b) => b.timestamp - a.timestamp)
         .map((x) => ({
           id: x.id,

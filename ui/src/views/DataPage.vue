@@ -6,6 +6,14 @@
           <h2>数据</h2>
           <a-space>
             <a-button
+              type="primary"
+              size="small"
+              :loading="markAllUnreadLoading"
+              @click="onMarkAllUnreadClick"
+            >
+              全部已阅
+            </a-button>
+            <a-button
               type="text"
               size="small"
               class="filter-toggle"
@@ -78,8 +86,8 @@
         <a-form-item label="属性">
           <a-input
             v-model:value="filters.attributesKeyword"
-            placeholder="属性模糊搜索"
-            style="width: 180px"
+            placeholder="匹配 attributes 键名（模糊）"
+            style="width: 200px"
           />
         </a-form-item>
         <a-form-item>
@@ -386,6 +394,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from "vue";
 import type { Dayjs } from "dayjs";
+import { Modal, message } from "ant-design-vue";
 import { http } from "@/api/http";
 import { formatUtcToBeijing } from "@/utils/time";
 
@@ -434,6 +443,7 @@ const filters = ref<{
 });
 
 const filtersVisible = ref(true);
+const markAllUnreadLoading = ref(false);
 
 const columns = [
   { title: "规则 ID", dataIndex: "ruleId", key: "ruleId" },
@@ -485,6 +495,60 @@ const favoriteModalTarget = ref<DataItem | null>(null);
 const favoriteModalSelectedListId = ref<string | null>(null);
 const favoriteModalNewListName = ref("");
 const favoriteLists = ref<{ id: string; name: string }[]>([]);
+
+/** 与列表查询相同的筛选字段（不含 readStatus / 分页），用于「全部已阅」 */
+function buildMarkAllUnreadBody(): Record<string, unknown> {
+  const body: Record<string, unknown> = {};
+  if (filters.value.crawlRange) {
+    body.crawlTimeFrom = filters.value.crawlRange[0].toISOString();
+    body.crawlTimeTo = filters.value.crawlRange[1].toISOString();
+  }
+  if (filters.value.publishRange) {
+    body.publishTimeFrom = filters.value.publishRange[0].toISOString();
+    body.publishTimeTo = filters.value.publishRange[1].toISOString();
+  }
+  if (filters.value.plugins.length > 0) {
+    body.sources = filters.value.plugins;
+  }
+  if (filters.value.keyword) {
+    body.keyword = filters.value.keyword;
+  }
+  if (filters.value.channel) {
+    body.channel = filters.value.channel;
+  }
+  if (filters.value.attributesKeyword) {
+    body.attributesKeyword = filters.value.attributesKeyword;
+  }
+  if (activeRuleId.value) {
+    body.ruleId = activeRuleId.value;
+  }
+  return body;
+}
+
+function onMarkAllUnreadClick() {
+  Modal.confirm({
+    title: "全部已阅",
+    content:
+      "将把当前筛选条件下所有未阅记录标为已阅（忽略状态的记录不会改为已阅），是否继续？",
+    onOk: () => markAllUnreadAsRead()
+  });
+}
+
+async function markAllUnreadAsRead() {
+  markAllUnreadLoading.value = true;
+  try {
+    const { data } = await http.post<{ ok?: boolean; updatedCount?: number }>(
+      "/data/read/mark-all-unread",
+      buildMarkAllUnreadBody()
+    );
+    message.success(`已标记 ${data.updatedCount ?? 0} 条为已阅`);
+    await search(false);
+  } catch {
+    message.error("操作失败");
+  } finally {
+    markAllUnreadLoading.value = false;
+  }
+}
 
 async function search(resetPage = false) {
   if (resetPage) pagination.value.page = 1;
